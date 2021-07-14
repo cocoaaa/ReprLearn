@@ -1,0 +1,2 @@
+from .multisource_mono_mnist import MultiMonoMNIST
+from .multisource_rotated_mnist import MultiRotatedMNIST

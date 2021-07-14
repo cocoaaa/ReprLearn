@@ -1,0 +1,11 @@
+from .base_datamodule import BaseDataModule
+from .mnist_datamodule import MNISTDataModule
+from .mono_mnist_datamodule import MonoMNISTDataModule
+from .mnistm_datamodule import MNISTMDataModule
+from .usps_datamodule import USPSDataModule
+from .maptiles_datamodule import MaptilesDataModule
+
+from .multisource_mono_mnist_datamodule import MultiMonoMNISTDataModule
+from .multisource_rotated_mnist_datamodule import MultiRotatedMNISTDataModule
+from .multisource_maptiles_datamodule import MultiMaptilesDataModule
+from .multisource_osmnxr_datamodule import MultiOSMnxRDataModule
