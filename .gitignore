@@ -30,3 +30,6 @@ __pycache__/
 # IPython
 profile_default/
 ipython_config.py
+
+# IDEs
+.idea
