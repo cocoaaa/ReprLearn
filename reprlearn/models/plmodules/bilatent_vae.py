@@ -9,10 +9,12 @@ from torch.nn import functional as F
 from pytorch_lightning.metrics import Accuracy
 
 from .base import BaseVAE
-from src.models.convnet import conv_blocks, deconv_blocks
-from src.models.resnet import ResNet
-from src.models.resnet_deconv import ResNetDecoder
-from .utils import  compute_kld
+from .utils import compute_kld
+
+from reprlearn.models.convnet import conv_blocks, deconv_blocks
+from reprlearn.models.resnet import ResNet
+from reprlearn.models.resnet_deconv import ResNetDecoder
+
 
 class BiVAE(BaseVAE):
     def __init__(self, *,
@@ -22,6 +24,7 @@ class BiVAE(BaseVAE):
                  latent_dim: int,
                  hidden_dims: Optional[List[int]],
                  adversary_dims: Optional[List[int]],
+                 n_samples: int,
                  learning_rate: float,
                  act_fn: Callable= nn.LeakyReLU(),
                  out_fn: Callable = nn.Tanh(),
@@ -29,27 +32,35 @@ class BiVAE(BaseVAE):
                  size_average: bool = False,
 
                  is_contrasive: bool = True,
-                 kld_weight: float=1.0,
-                 adv_loss_weight: float=1.0,
+                 kld_weight: float = 1.0,
+                 adv_loss_weight: float = 1.0,
 
                  enc_type: str = 'conv',
                  dec_type: str = 'conv',
                  **kwargs) -> None:
         """
-        VAE with extra adversarial loss from a style discriminator to enforce the information from original data to be
-        encoded into two independent subspaces of the latent space, \mathcal{Z_c} and \mathcal{Z_s}
-        aka. Bi-latent VAE
+        VAE with extra adversarial loss from a style discriminator to enforce the
+        information from original data to be encoded into two independent subspaces
+        of the latent space, \mathcal{Z_c} and \mathcal{Z_s} aka. Bi-latent VAE
         TODO: how about Bilinear VAE
 
-        :param in_shape: model(x)'s input x's shape w/o batch dimension, in order of (c, h, w). Note no batch dimension.
+        :param in_shape: model(x)'s input x's shape w/o batch dimension,
+        in order of (c, h, w). Note no batch dimension.
         :param latent_dim:
         :param hidden_dims:
+        :param n_samples: number of latent codes to draw from q^{(n}) corresponding
+        to the variational distribution of nth datapoint.
+            Note. If `n_samples==1`, our model is the same model as Vanilla VAE.
         :param act_fn: Default is LeakyReLU()
         :param learning_rate: initial learning rate. Default: 1e-3.
-        :param size_average: bool; whether to average the recon_loss across the pixel dimension. Default: False
-        :param is_contrasive bool; True to use both adversarial losses from the content and style codes
-            If False, use only the loss from the style code's classification prediction as the adversarial loss
-        :param kld_weight (float); Beta in BetaVAE that is a relative weight of the kld vs. recon-loss
+        :param size_average: bool; whether to average the recon_loss across the
+        pixel dimension. Default: False
+        :param is_contrasive bool; True to use both adversarial losses from the
+        content and style codes
+            If False, use only the loss from the style code's classification prediction a
+            s the adversarial loss
+        :param kld_weight (float); Beta in BetaVAE that is a relative weight of
+        the kld vs. recon-loss
             vae_loss = recon_loss + kld_weight * kld
         :param adv_loss_weight (float); Weight btw vae_loss and adv_loss
             loss = vae_loss + adv_loss_weight * adv_loss
@@ -67,7 +78,8 @@ class BiVAE(BaseVAE):
         # About model configs
         self.latent_dim = latent_dim
         self.content_dim = int(self.latent_dim/2)
-        self.style_dim = self.content_dim
+        self.style_dim = self.latent_dim - self.content_dim
+        self.n_samples = n_samples
         self.act_fn = act_fn
         self.out_fn = out_fn
         self.learning_rate = learning_rate
@@ -160,7 +172,8 @@ class BiVAE(BaseVAE):
         self.out_layer = nn.Sequential(
             nn.Conv2d(self.in_channels, self.in_channels,
                       kernel_size=3, stride=1, padding=1),
-            self.out_fn)  # todo: sigmoid? maybe Tanh is better given we normalize inputs by mean and std
+            self.out_fn)  # todo: sigmoid? maybe Tanh is better given we normalize
+                          # inputs by mean and std
 
         # Build style classifier:
         # Given a content or style code, predict its style label
@@ -179,7 +192,7 @@ class BiVAE(BaseVAE):
     @property
     def name(self):
         bn = "BiVAE-C" if self.is_contrasive else "BiVAE"
-        return f'{bn}-{self.enc_type}-{self.dec_type}-{self.kld_weight:.1f}-{self.adv_loss_weight:.1f}'
+        return f'{bn}-{self.enc_type}-{self.dec_type}-{self.kld_weight:.1f}-{self.adv_loss_weight:.1f}-{self.n_samples}'
 
     def input_dim(self):
         return np.prod(self.dims)
