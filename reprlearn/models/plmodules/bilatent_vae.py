@@ -9,10 +9,12 @@ from torch.nn import functional as F
 from pytorch_lightning.metrics import Accuracy
 
 from .base import BaseVAE
-from src.models.convnet import conv_blocks, deconv_blocks
-from src.models.resnet import ResNet
-from src.models.resnet_deconv import ResNetDecoder
-from .utils import  compute_kld
+from .utils import compute_kld
+
+from reprlearn.models.convnet import conv_blocks, deconv_blocks
+from reprlearn.models.resnet import ResNet
+from reprlearn.models.resnet_deconv import ResNetDecoder
+
 
 class BiVAE(BaseVAE):
     def __init__(self, *,
@@ -22,6 +24,7 @@ class BiVAE(BaseVAE):
                  latent_dim: int,
                  hidden_dims: Optional[List[int]],
                  adversary_dims: Optional[List[int]],
+                 n_samples: int,
                  learning_rate: float,
                  act_fn: Callable= nn.LeakyReLU(),
                  out_fn: Callable = nn.Tanh(),
@@ -29,27 +32,35 @@ class BiVAE(BaseVAE):
                  size_average: bool = False,
 
                  is_contrasive: bool = True,
-                 kld_weight: float=1.0,
-                 adv_loss_weight: float=1.0,
+                 kld_weight: float = 1.0,
+                 adv_loss_weight: float = 1.0,
 
                  enc_type: str = 'conv',
                  dec_type: str = 'conv',
                  **kwargs) -> None:
         """
-        VAE with extra adversarial loss from a style discriminator to enforce the information from original data to be
-        encoded into two independent subspaces of the latent space, \mathcal{Z_c} and \mathcal{Z_s}
-        aka. Bi-latent VAE
+        VAE with extra adversarial loss from a style discriminator to enforce the
+        information from original data to be encoded into two independent subspaces
+        of the latent space, \mathcal{Z_c} and \mathcal{Z_s} aka. Bi-latent VAE
         TODO: how about Bilinear VAE
 
-        :param in_shape: model(x)'s input x's shape w/o batch dimension, in order of (c, h, w). Note no batch dimension.
+        :param in_shape: model(x)'s input x's shape w/o batch dimension,
+        in order of (c, h, w). Note no batch dimension.
         :param latent_dim:
         :param hidden_dims:
+        :param n_samples: number of latent codes to draw from q^{(n}) corresponding
+        to the variational distribution of nth datapoint.
+            Note. If `n_samples==1`, our model is the same model as Vanilla VAE.
         :param act_fn: Default is LeakyReLU()
         :param learning_rate: initial learning rate. Default: 1e-3.
-        :param size_average: bool; whether to average the recon_loss across the pixel dimension. Default: False
-        :param is_contrasive bool; True to use both adversarial losses from the content and style codes
-            If False, use only the loss from the style code's classification prediction as the adversarial loss
-        :param kld_weight (float); Beta in BetaVAE that is a relative weight of the kld vs. recon-loss
+        :param size_average: bool; whether to average the recon_loss across the
+        pixel dimension. Default: False
+        :param is_contrasive bool; True to use both adversarial losses from the
+        content and style codes
+            If False, use only the loss from the style code's classification prediction a
+            s the adversarial loss
+        :param kld_weight (float); Beta in BetaVAE that is a relative weight of
+        the kld vs. recon-loss
             vae_loss = recon_loss + kld_weight * kld
         :param adv_loss_weight (float); Weight btw vae_loss and adv_loss
             loss = vae_loss + adv_loss_weight * adv_loss
@@ -67,7 +78,8 @@ class BiVAE(BaseVAE):
         # About model configs
         self.latent_dim = latent_dim
         self.content_dim = int(self.latent_dim/2)
-        self.style_dim = self.content_dim
+        self.style_dim = self.latent_dim - self.content_dim
+        self.n_samples = n_samples
         self.act_fn = act_fn
         self.out_fn = out_fn
         self.learning_rate = learning_rate
@@ -160,7 +172,8 @@ class BiVAE(BaseVAE):
         self.out_layer = nn.Sequential(
             nn.Conv2d(self.in_channels, self.in_channels,
                       kernel_size=3, stride=1, padding=1),
-            self.out_fn)  # todo: sigmoid? maybe Tanh is better given we normalize inputs by mean and std
+            self.out_fn)  # todo: sigmoid? maybe Tanh is better given we normalize
+                          # inputs by mean and std
 
         # Build style classifier:
         # Given a content or style code, predict its style label
@@ -176,10 +189,14 @@ class BiVAE(BaseVAE):
         self.val_style_acc = Accuracy()
         self.test_style_acc = Accuracy()
 
+        # Add confusion matrix metric as multi-class classification metric
+        # for style-prediction subtask
+        self.train_cm =
+
     @property
     def name(self):
         bn = "BiVAE-C" if self.is_contrasive else "BiVAE"
-        return f'{bn}-{self.enc_type}-{self.dec_type}-{self.kld_weight:.1f}-{self.adv_loss_weight:.1f}'
+        return f'{bn}-{self.enc_type}-{self.dec_type}-{self.kld_weight:.1f}-{self.adv_loss_weight:.1f}-{self.n_samples}'
 
     def input_dim(self):
         return np.prod(self.dims)
@@ -241,12 +258,34 @@ class BiVAE(BaseVAE):
         logvar_qs = dict_q_params["logvar_qs"] #(BS, self.style_dim)
         std_qs = logvar_qs.exp()
 
+        # Expand mu's and logvar's to 3-dim tensor to handle >1
+        # sampling of z's from each q(z[n])
+        mu_qc = mu_qc[:, None]  # (BS, 1, self.content_dim)
+        std_qc = std_qc[:, None] # (BS, 1, self.content_dim)
+        mu_qs = mu_qs[:, None]  # (BS, 1, self.content_dim)
+        std_qs = std_qs[:, None]  # (BS, 1, self.content_dim)
+
         # Reparam. trick
-        eps_c = torch.randn_like(mu_qc)
+        # eps_c = torch.randn_like(mu_qc)
+        bs = len(mu_qc)
+        eps_c = torch.randn((bs, self.n_samples, self.content_dim),
+                            dtype=mu_qc.dtype,
+                            device=mu_qc.device)
         c_samples = eps_c * std_qc + mu_qc
 
-        eps_s = torch.randn_like(mu_qs)
+        eps_s = torch.randn((bs, self.n_samples, self.style_dim),
+                            dtype=mu_qs.dtype,
+                            device=mu_qs.device)
         s_samples = eps_s * std_qs + mu_qs
+
+        # todo: not sure if this is a good idea
+        # but at least now, this will keep the code backward compatible
+        # take the average of the z's sampled from q(z[n])
+        c_samples = c_samples.mean(1)
+        s_samples = s_samples.mean(1)
+        # print("c_samples: ", c_samples.shape)
+        # print("s_samples: ", s_samples.shape)
+        # breakpoint()
 
         dict_z_samples = {"c": c_samples,"s": s_samples}
         return dict_z_samples
@@ -263,6 +302,7 @@ class BiVAE(BaseVAE):
         out = out.view(-1, self.hidden_dims[-1], self.last_h, self.last_w) # back to a mini-batch of 3dim tensors
         out = self.decoder(out); #print(out.shape)
         out = self.out_layer(out); #print(out.shape)
+
         return out
 
     def create_labels(self, z):
@@ -322,18 +362,18 @@ class BiVAE(BaseVAE):
         """
         dict_z = {
             "c": z[:, :self.content_dim],
-            "s": z[:, self.content_dim:]
+            "s": z[:,  self.content_dim:]
         }
         return dict_z
 
-    def predict_y(self, z_partition):
+    def predict_d(self, z_partition):
         """
         Use the style classifer to predict the style label given either content or style code.
         :param z_partition:  (BS, self.content_dim), same as (BS, style_dim)
         :return: y_scores: predicted styles  (BS, n_styles)
         """
-        y_scores = self.adversary(z_partition) #(BS, n_styles)
-        return y_scores
+        d_scores = self.adversary(z_partition) #(BS, n_styles)
+        return d_scores
 
     def compute_loss_c(self, c:torch.Tensor) -> Tensor:
         """
@@ -348,22 +388,22 @@ class BiVAE(BaseVAE):
         bs = len(c)
         # target = torch.ones((bs, self.n_styles), device=c.device)
         # target /= self.n_styles # TODO: possible to not create this as a tensor, as it has all the same value ie. 1/self.n_styles
-        scores = self.predict_y(c); #print("score_c: ", scores.shape) #(bs, n_styles)
+        scores = self.predict_d(c); #print("score_c: ", scores.shape) #(bs, n_styles)
         log_probs = nn.LogSoftmax(dim=1)(scores) #(bs, n_styles)
         loss_c = - log_probs.mean(dim=1) # same as: log_probs.sum(dim=1) / self.n_styles
         loss_c = loss_c.mean(dim=0) # adversarial loss per content code
 
         return loss_c
 
-    def compute_loss_s(self, s:torch.Tensor, target_y) -> Tensor:
+    def compute_loss_s(self, s:torch.Tensor, target_d) -> Tensor:
         """
 
         :param s: style code; (bs, style_dim)
-        :param target_y: target style index (ie. one-hot style target); (bs,)
+        :param target_d: target style index (ie. one-hot style target); (bs,)
         :return: loss_s (torch.float32)
         """
-        scores = self.predict_y(s)
-        loss_s = nn.CrossEntropyLoss(reduction='mean')(scores, target_y) # estimated loss computed as averaged loss (over batch)
+        scores = self.predict_d(s)
+        loss_s = nn.CrossEntropyLoss(reduction='mean')(scores, target_d) # estimated loss computed as averaged loss (over batch)
         return loss_s
 
     def loss_function(self,
@@ -382,30 +422,29 @@ class BiVAE(BaseVAE):
             eg. has a key "kld_weight" to multiply the (negative) kl-divergence
         :return: loss_dict
         """
-
         # Uppack the batch into a batch of img, content_labels, style_labels
         # target_x = batch['img'].detach().clone()
-        # # label_c = batch['digit']  # digit/content label (int) -- currently not used
-        # label_s = batch['color'].detach().clone()  # color/style label (int) -- used for adversarial loss_s
+        # label_c = batch['digit']  # digit/content label (int); not used currently
+        # label_s = batch['color'].detach().clone()  # color/style label (int); used for adversarial loss_s
         target_x, label_c, label_s = self.trainer.datamodule.unpack(batch)
-        target_x = target_x.detach().clone()
-        label_s = label_s.detach().clone()
-
+        target_x = target_x.detach().clone() # imgs
+        label_s = label_s.detach().clone() # d
 
         # qparams
         mu_qc, logvar_qc = out_dict["mu_qc"], out_dict["logvar_qc"]
         mu_qs, logvar_qs = out_dict["mu_qs"], out_dict["logvar_qs"]
-        # samples
+        # sampled latent codes
         c, s, = out_dict["c"], out_dict["s"]
         # output of decoder
         mu_x_pred = out_dict["mu_x_pred"]
 
-        # Monitor kld of each latent subspace to see how the content/style latent's KLD's changes individually
+        # Monitor kld of each latent subspace to see how the content/style
+        # latent's KLD's changes individually
         with torch.no_grad():
             kld_c = compute_kld(mu_qc, logvar_qc)
             kld_s = compute_kld(mu_qs, logvar_qs)
 
-        # Combine mu_qc and mu_qs. Same for logvars
+        # Combine mu_qc and mu_qs. Same for logvars. Defines q_z for each datapt
         mu_z = self.combine_content_style({"c": mu_qc, "s": mu_qs})
         logvar_z = self.combine_content_style({"c": logvar_qc, "s": logvar_qs})
 
@@ -416,8 +455,8 @@ class BiVAE(BaseVAE):
         vae_loss = recon_loss + self.kld_weight * kld
 
         # Compute adversarial loss
-        #adv_loss_s = self.compute_loss_s(s, target_y) #loss from "positives"
-        score_s = self.predict_y(s); #print("score_s: ", score_s.shape) #(bs, n_styles)
+        # adv_loss_s = self.compute_loss_s(s, label_s) #loss from "positives"
+        score_s = self.predict_d(s); #print("score_s: ", score_s.shape) #(bs, n_styles)
         adv_loss_s = nn.CrossEntropyLoss(reduction='mean')(score_s, label_s)  # estimated loss computed as averaged loss (over batch)
         if self.is_contrasive:
             adv_loss_c = self.compute_loss_c(c)  # loss from "negatives"
@@ -433,8 +472,8 @@ class BiVAE(BaseVAE):
         loss_dict = {
             "kld_c": kld_c,
             "kld_s": kld_s,
-             'recon_loss': recon_loss,
-             'kld': kld,
+            'recon_loss': recon_loss,
+            'kld': kld,
             'vae_loss': vae_loss,
             "score_s": score_s,# (BS, n_styles); needed to compute the style accuracy at `training_step`
             'adv_loss_s': adv_loss_s,
@@ -494,9 +533,10 @@ class BiVAE(BaseVAE):
 
     def training_step(self, batch, batch_idx):
         """
-        Implements one mini-batch iteration: x -> model(x) -> loss or loss_dict
-        `loss` is the last node of the model's computational graph, ie. starting node of
-        backprop.
+        Implements one forward-pass (aka. "iteration"):
+        x -> model(x) -> loss or loss_dict
+        `loss` is the last node of the model's computational graph,
+        ie. starting node of backprop.
         """
         # x = batch['img']
         # # label_c = batch['digit'] # digit/content label (int) -- currently not used
@@ -525,7 +565,7 @@ class BiVAE(BaseVAE):
         #-- update and log the style_acc metric
         score_s = loss_dict.pop("score_s").detach().clone() # we don't want to compute metric on the loss computational graph
         self.train_style_acc(score_s, label_s)
-        self.log('train/style_acc', self.train_style_acc)# Note: we pass in the Metric object, rather than the value tensor
+        self.log('train/style_acc', self.train_style_acc) # Note: we pass in the Metric object, rather than the value tensor
 
         return {'loss': loss_dict["loss"]}
 
