@@ -8,8 +8,8 @@ import pytorch_lightning as pl
 from typing import Tuple, Iterable, Optional, Union, List
 import warnings
 
-from src.utils.misc import info
-from src.data.transforms.functional import unnormalize
+from reprlearn.utils.misc import info
+from reprlearn.data.transforms.functional import unnormalize
 
 """
 TODO:
@@ -152,6 +152,9 @@ def show_batch(dm, #: BaseDataModule,
 
         dl = getattr(dm, f"{mode}_dataloader")()
         x, y = next(iter(dl))
+        #todo: more general way of unpacking batch into x and y
+        # batch = next(iter(dl))
+        # x,y = dm.unpack(batch)
 
         if show_unnormalized:
             train_mean, train_std = dm.train_mean, dm.train_std
