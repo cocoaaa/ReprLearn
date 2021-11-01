@@ -14,10 +14,19 @@ from pathlib import Path
 from typing import List, Set, Dict, Tuple, Optional, Iterable, Mapping, Union, Callable
 import warnings
 
+
 def now2str():
     now = datetime.now()
     now_str = now.strftime("%Y%m%d-%H%M%S")
     return now_str
+
+
+def today2str(delimiter: str = "-"):
+    # Print today's date (year, month, day) as a string, separated by the
+    # `delimiter`
+    now = datetime.now()
+    return now.strftime(f"%Y{delimiter}%m{delimiter}%d")
+
 
 def print_mro(x, print_fn:Callable=print):
     """
@@ -28,6 +37,7 @@ def print_mro(x, print_fn:Callable=print):
     else:
         [print_fn(kls) for kls in x.__class__.mro()[::-1]]
 
+
 def info(arr, header=None):
     if header is None:
         header = "="*30
@@ -35,6 +45,7 @@ def info(arr, header=None):
     print("shape: ", arr.shape)
     print("dtype: ", arr.dtype)
     print("min, max: ", min(np.ravel(arr)), max(np.ravel(arr)))
+
 
 def mkdir(p: Path, parents=True):
     if not p.exists():
@@ -125,17 +136,21 @@ def n_iter_per_epoch(dl:DataLoader):
 # npimg <--> torch image conversion
 # https://www.programmersought.com/article/58724642452/
 
+
 def npimg2timg(npimg: np.ndarray):
     if npimg.dtype == np.uint8:
         npimg = npimg / 255.0
 
     return torch.from_numpy(npimg.transpose((2,0,1)))
 
+
 def timg2npimg(timg: torch.Tensor):
     return timg.detach().numpy().squeeze().transpose((1,2,0))
 
+
 def npimgs2timgs(npimgs: np.ndarray):
     return torch.from_numpy((npimgs.transpose((0,-1, 1, 2))))
+
 
 def timgs2npimg2(timgs: torch.Tensor):
     return timgs.detach().numpy().transpose(0, -2, -1, -3)
