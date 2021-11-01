@@ -13,7 +13,8 @@ class BaseDataModule(pl.LightningDataModule):
 
     Required init args:
     - data_root
-    - in_shape
+    - in_shape : size of a single datapoint tensor (e.g. (3,64,64) for a 64x64 RGB;
+         Do not include the batch_size.
     - batch_size
 
     Optional init args:
@@ -42,7 +43,8 @@ class BaseDataModule(pl.LightningDataModule):
         super().__init__()
         self.data_root = data_root
         self.in_shape = in_shape
-        # self.dims is returned when you call dm.size()
+        # self.dims is returned when you call dm.size(), which is the size of
+        # a single datapoint, e.g. (1,28,28)
         # Setting default dims here because we know them.
         # Could optionally be assigned dynamically in dm.setup()
         self.dims = in_shape
@@ -60,6 +62,8 @@ class BaseDataModule(pl.LightningDataModule):
         self.verbose = verbose
 
         # Keep main parameters for experiment logging
+        # Alternatively, use self.save_hyperparameters method
+        # self.save_hyperparameters('in_shape', 'batch_size')
         self.hparams = {
             "in_shape": self.in_shape,
             "batch_size": self.batch_size
@@ -69,8 +73,10 @@ class BaseDataModule(pl.LightningDataModule):
     #todo: make it required
     @property
     def name(self) -> str:
+        """Name of this datamodule. Used e.g. for logging an experiment"""
         raise NotImplementedError
 
     @classmethod
     def from_dict(cls, **kwargs):
+        """Initialize a DataModule object from a config given as a dictionary"""
         return cls(**kwargs)
