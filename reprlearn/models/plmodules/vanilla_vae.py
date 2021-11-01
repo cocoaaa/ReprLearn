@@ -4,8 +4,6 @@ import numpy as np
 import torch
 from torch import nn
 from torch.nn import functional as F
-import pytorch_lightning as pl
-from pytorch_lightning.core.lightning import LightningModule
 
 from pprint import pprint
 from .base import BaseVAE
