@@ -26,8 +26,8 @@ class IWAE(BaseVAE):
          in order of (c, h, w). Note no batch dimension.
         :param latent_dim:
         :param hidden_dims:
-        :param n_samples: number of latent codes to draw from q^{(n}) corresponding to the
-        variational distribution of nth datapoint.
+        :param n_samples: number of latent codes to draw from q^{(n}) corresponding
+        to the variational distribution of nth datapoint.
             Note. If `n_samples==1`, IWAE is the same model as Vanilla VAE.
         :param act_fn: Default is LeakyReLU()
         :param learning_rate: initial learning rate. Default: 1e-3.
