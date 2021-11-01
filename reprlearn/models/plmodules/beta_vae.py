@@ -5,14 +5,11 @@ import torch
 from torch import nn
 from torch import optim
 from torch.nn import functional as F
-import pytorch_lightning as pl
-from pytorch_lightning.core.lightning import LightningModule
 
-from pprint import pprint
 from .base import BaseVAE
-from src.models.convnet import conv_blocks, deconv_blocks
-from src.models.resnet import ResNet
-from src.models.resnet_deconv import ResNetDecoder
+from reprlearn.models.convnet import conv_blocks, deconv_blocks
+from reprlearn.models.resnet import ResNet
+from reprlearn.models.resnet_deconv import ResNetDecoder
 
 class BetaVAE(BaseVAE):
     """
@@ -50,10 +47,13 @@ class BetaVAE(BaseVAE):
             Default: False
         :param kld_weight : float
             weight balancing the recon_loss and kld; corresponds to "beta" in beta-VAE
-            The scale of kld_weight is per input data point (, rather than per datapt's pixel, ie. dim_x)
-        :param use_resnet: If true, implement encder and decoder with skip connections
+            The scale of kld_weight is per loss from a datapoint (, rather than per loss term from a datapt's pixel, ie. dim_x)
+        :param enc_type : str
+            type of network for encoder,e.g. 'conv' for conv layers, 'resnet' for ResNet
+        :param dec_type : std
+            type of neural network for decoder, e.g.'conv' for decov layers, 'resnet' for ResNet
         :param kwargs: will be part of self.hparams
-            Eg. batch_size, kld_weight
+            Eg. batch_size
         """
         super().__init__()
         self.dims = in_shape
