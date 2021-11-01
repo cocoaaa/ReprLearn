@@ -46,11 +46,13 @@ def conv_block(
     - padding_mode
     """
     # Default conv_kwargs is overwritten by input kwargs
-    conv_kwargs = {'kernel_size': 3, 'stride': 2, 'padding': 1}
+    bias = False if has_bn else True
+    conv_kwargs = {'kernel_size': 3, 'stride': 2, 'padding': 1, 'bias': bias}
     conv_kwargs.update(kwargs)
 
     if act_fn is None:
         act_fn = nn.LeakyReLU()
+
     return nn.Sequential(OrderedDict([
         ('conv', nn.Conv2d(in_channels, out_channels, **conv_kwargs)),
         ('bn', nn.BatchNorm2d(out_channels) if has_bn else nn.Identity()),
@@ -104,7 +106,9 @@ def deconv_block(
     - output_padding
     """
     # Default conv_kwargs is overwritten by input kwargs
-    deconv_kwargs = {'kernel_size': 3, 'stride': 2, 'padding': 1, 'output_padding':1}
+    bias = False if has_bn else True
+    deconv_kwargs = {'kernel_size': 3, 'stride': 2, 'padding': 1,
+                     'output_padding':1, 'bias': bias}
     deconv_kwargs.update(kwargs)
 
     if act_fn is None:
