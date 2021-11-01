@@ -5,13 +5,24 @@ import torch
 import pytorch_lightning as pl
 from torch.utils.data import random_split, DataLoader
 
-from torchvision.datasets import MNIST
+# from torchvision.datasets import MNIST
+from reprlearn.data.datasets.mnist import MNIST
 from torchvision import transforms
 
 from .base_datamodule import BaseDataModule
 
 class MNISTDataModule(BaseDataModule):
-
+    """
+    Init params
+    -----------
+    data_root : Path to the folder that has 'MNIST/raw'
+    in_shape : Tuple of a single datapoint's size to resize the MNIST image,
+        e.g. (1,32,32)
+    batch_size : batch size for train, val, test dataloaders
+    pin_memory : Default True
+    num_workers : Default 16
+    shuffle : shuffle setting for train dataloader; Default True
+    """
     def __init__(self, *,
                  data_root: Union[Path, str],
                  in_shape: Tuple,
@@ -44,7 +55,8 @@ class MNISTDataModule(BaseDataModule):
             transforms.Normalize(self.train_mean, self.train_std)
         ])
 
-        # Update hparams with MNIST specifics
+        # Update hparams (initialized from BaseDataModule)
+        # with MNIST specifics
         self.hparams.update({
             "n_classes":  self.n_classes,
                              })
@@ -60,11 +72,15 @@ class MNISTDataModule(BaseDataModule):
         MNIST(self.data_root, train=False, download=True)
 
     def setup(self, stage=None):
-
+        print('Setting up datamodule...')
         # Assign train/val datasets for use in dataloaders
         if stage == 'fit' or stage is None:
             full_ds = MNIST(self.data_root, train=True, transform=self.transform)
             self.train_ds, self.val_ds = random_split(full_ds, [self.n_train, self.n_val])
+            # a bit hacky but we want to keep our MNIST class's unpack function
+            self.train_ds.unpack = full_ds.unpack
+            self.val_ds.unpack = full_ds.unpack
+            self.unpack = full_ds.unpack #set a classmethod for this Datmodule class
 
         # Assign test dataset for use in dataloader(s)
         if stage == 'test' or stage is None:
