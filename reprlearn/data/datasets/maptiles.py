@@ -8,7 +8,7 @@ from typing import List, Set, Dict, Tuple, Optional, Iterable, Mapping, Union, C
 from torch.utils.data import Dataset
 from ipdb import set_trace as brpt
 
-from src.visualize.utils import get_fig
+from reprlearn.visualize.utils import get_fig
 
 class MaptilesDataset(Dataset):
 

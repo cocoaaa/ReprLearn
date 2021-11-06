@@ -8,7 +8,7 @@ import pytorch_lightning as pl
 from torch.utils.data import random_split, DataLoader, Dataset
 from torchvision import transforms
 
-from src.data.datasets.multisource_rotated_mnist import MultiRotatedMNIST
+from reprlearn.data.datasets import MultiRotatedMNIST
 from .multisource_datamodule import MultiSourceDataModule
 
 class MultiRotatedMNISTDataModule(MultiSourceDataModule):

@@ -6,7 +6,7 @@ import pytorch_lightning as pl
 from torch.utils.data import random_split, DataLoader, Dataset
 from torchvision import transforms
 
-from src.data.datasets.mono_mnist import MonoMNIST
+from reprlearn.data.datasets.mono_mnist import MonoMNIST
 from .base_datamodule import BaseDataModule
 
 class MonoMNISTDataModule(BaseDataModule):

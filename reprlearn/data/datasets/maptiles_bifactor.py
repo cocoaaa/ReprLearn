@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import List, Set, Dict, Tuple, Optional, Iterable, Mapping, Union, Callable
 from torch.utils.data import Dataset
 from .two_factor_dataset import TwoFactorDataset
-from src.visualize.utils import get_fig
+from reprlearn.visualize.utils import get_fig
 
 class MaptilesDataset(TwoFactorDataset):
 

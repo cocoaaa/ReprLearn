@@ -9,8 +9,8 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 import pytorch_lightning as pl
 
-from src.data.datasets.maptiles import MaptilesDataset
-from src.data.datamodules import BaseDataModule
+from reprlearn.data.datasets.maptiles import MaptilesDataset
+from reprlearn.data.datamodules import BaseDataModule
 from ipdb import set_trace
 
 class MaptilesDataModule(BaseDataModule):

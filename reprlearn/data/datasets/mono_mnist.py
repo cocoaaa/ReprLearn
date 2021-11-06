@@ -5,7 +5,7 @@ from collections import defaultdict
 from torchvision import transforms, datasets
 from torch.utils.data import Dataset, DataLoader, random_split
 import torch
-from src.data.transforms.transforms import  Monochromizer
+from reprlearn.data.transforms.transforms import  Monochromizer
 from .two_factor_dataset import TwoFactorDataset
 
 class MonoMNIST(TwoFactorDataset):

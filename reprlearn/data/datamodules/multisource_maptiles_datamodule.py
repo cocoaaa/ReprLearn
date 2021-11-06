@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 import pytorch_lightning as pl
 
-from src.data.datasets.maptiles_bifactor import MaptilesDataset
+from reprlearn.data.datasets.maptiles_bifactor import MaptilesDataset
 from .multisource_datamodule import MultiSourceDataModule
 
 class MultiMaptilesDataModule(MultiSourceDataModule):
