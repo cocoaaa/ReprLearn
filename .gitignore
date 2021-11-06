@@ -26,6 +26,7 @@ __pycache__/
 
 # Jupyter Notebook
 .ipynb_checkpoints
+nbs/
 
 # IPython
 profile_default/
@@ -33,3 +34,4 @@ ipython_config.py
 
 # IDEs
 .idea
+
