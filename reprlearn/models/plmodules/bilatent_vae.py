@@ -189,9 +189,9 @@ class BiVAE(BaseVAE):
         self.val_style_acc = Accuracy()
         self.test_style_acc = Accuracy()
 
-        # Add confusion matrix metric as multi-class classification metric
+        # todo:Add confusion matrix metric as multi-class classification metric
         # for style-prediction subtask
-        self.train_cm =
+        # self.train_cm =
 
     @property
     def name(self):
