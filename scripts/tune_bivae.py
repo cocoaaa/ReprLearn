@@ -71,13 +71,13 @@ from ray import tune
 from ray.tune import CLIReporter
 from ray.tune.integration.pytorch_lightning import TuneReportCallback
 
-from src.callbacks.recon_logger import ReconLogger
-from src.callbacks.hist_logger import  HistogramLogger
-from src.callbacks.beta_scheduler import BetaScheduler
+from reprlearn.callbacks.recon_logger import ReconLogger
+from reprlearn.callbacks.hist_logger import  HistogramLogger
+from reprlearn.callbacks.beta_scheduler import BetaScheduler
 
 # src helpers
-from src.utils.misc import info, n_iter_per_epoch
-from src.models.model_wrapper import ModelWrapper
+from reprlearn.utils.misc import info, n_iter_per_epoch
+from reprlearn.models.model_wrapper import ModelWrapper
 
 # utils for instatiating a selected datamodule and a selected model
 from utils import get_model_class, get_dm_class
@@ -116,7 +116,7 @@ def train_tune(args: Union[Dict, Namespace]):
         ),
         # HistogramLogger(hist_epoch_interval=args.hist_epoch_interval),
         # ReconLogger(recon_epoch_interval=args.recon_epoch_interval),
-        #         EarlyStopping('val_loss', patience=10),
+        # EarlyStopping('val_loss', patience=10),
     ]
     if args.use_beta_scheduler:
         max_iters = n_iter_per_epoch(dm.train_dataloader()) * args.max_epochs
@@ -153,6 +153,7 @@ def train_tune(args: Union[Dict, Namespace]):
     print(f"Logging to {Path(tb_logger.log_dir).absolute()}")
     trainer.fit(model, dm)
     print(f"Finished at ep {trainer.current_epoch, trainer.batch_idx}")
+    print(f"Training Done: took {time.time() - start_time}")
 
 
     # ------------------------------------------------------------------------
@@ -164,12 +165,12 @@ def train_tune(args: Union[Dict, Namespace]):
     metrics = {'hparam/best_score': best_score}  # todo: define a metric and use it here
     trainer.logger.log_hyperparams(hparams, metrics)
 
-    print("Logged hparams and metrics...")
+    print("Logging hparams and metrics...")
     print("\t hparams: ")
     pprint(hparams)
     print("=====")
     print("\t metrics: ", metrics)
-    print(f"Training Done: took {time.time() - start_time}")
+    print(f"Finished logging to Tensorboard")
 
     # ------------------------------------------------------------------------
     # Evaluation
