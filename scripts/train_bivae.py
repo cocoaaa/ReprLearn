@@ -29,7 +29,6 @@ from pathlib import Path
 from typing import List, Set, Dict, Tuple, Optional, Iterable, Mapping, Union, Callable, TypeVar
 import warnings
 from pprint import pprint
-from ipdb import set_trace as brpt
 
 import torch
 import torch.nn as nn
@@ -43,21 +42,21 @@ from pytorch_lightning.core.lightning import LightningModule
 from pytorch_lightning import loggers as pl_loggers
 
 # plmodules
-from src.models.plmodules.three_fcs import ThreeFCs
-from src.models.plmodules.vanilla_vae import VanillaVAE
-from src.models.plmodules.iwae import IWAE
+from reprlearn.models.plmodules.three_fcs import ThreeFCs
+from reprlearn.models.plmodules.vanilla_vae import VanillaVAE
+from reprlearn.models.plmodules.iwae import IWAE
 
 # datamodules
-from src.data.datamodules.maptiles_datamodule import MaptilesDataModule
-from src.data.datamodules.mnist_datamodule import MNISTDataModule
+from reprlearn.data.datamodules.maptiles_datamodule import MaptilesDataModule
+from reprlearn.data.datamodules.mnist_datamodule import MNISTDataModule
 
 # callbacks
-from src.callbacks.recon_logger import ReconLogger
-from src.callbacks.hist_logger import  HistogramLogger
+from reprlearn.callbacks.recon_logger import ReconLogger
+from reprlearn.callbacks.hist_logger import  HistogramLogger
 
 # src helpers
-from src.utils.misc import info
-from src.models.model_wrapper import ModelWrapper
+from reprlearn.utils.misc import info
+from reprlearn.models.model_wrapper import ModelWrapper
 
 
 def get_act_fn(fn_name:str) -> Callable:
