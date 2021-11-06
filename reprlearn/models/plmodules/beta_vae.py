@@ -118,7 +118,7 @@ class BetaVAE(BaseVAE):
 
         self.out_layer = nn.Sequential(
             nn.Conv2d(self.in_channels, self.in_channels,
-                      kernel_size=3, stride=1, padding= 1),
+                      kernel_size=3, stride=1, padding=1),
             self.out_fn) #todo: sigmoid? maybe Tanh is better given we normalize inputs by mean and std
 
     @property
@@ -184,24 +184,39 @@ class BetaVAE(BaseVAE):
         eps = torch.randn_like(std)
         return eps * std + mu
 
-    def forward(self, x: Tensor, **kwargs) -> List[Tensor]:
-        # import ipdb; ipdb.set_trace()
+    def forward(self, x: Tensor, **kwargs) -> Dict[str,Tensor]:
+        """Forward-prop input batch x through encoder and decoder.
+        Returns a dict of parameters for the q_z ("mu","log_var") and the reconstruction "recon"
+
+        Returns
+        -------
+        out : Dict[str, Tensor] of latent parameters "mu", "log_var" and
+            data-likelihood model distribution's parameter mu_x (as "recon")
+        """
         mu, log_var = self.encode(x)
         z = self.reparameterize(mu, log_var)
-        return  {"mu":mu, "log_var":log_var, "recon":self.decode(z)}
+        return {"mu":mu, "log_var":log_var, "recon":self.decode(z)}
 
     def loss_function(self, out, target, mode:str,
                       **kwargs) -> dict:
         """
         Computes the VAE loss function from a mini-batch of pred and target
         KL(N(\mu, \sigma), N(0, 1)) = \log \frac{1}{\sigma} + \frac{\sigma^2 + \mu^2}{2} - \frac{1}{2}
-        :param args:
-        :param mode: (str) one of "train", "val", "test"
-        :param kwargs: eg. has a key "kld_weight" to multiply the (negative) kl-divergence
-        :return:
+
+        Args
+        ----
+        out : Dict[Tensor] returned by forward method
+
+        mode : (str) one of "train", "val", "test"
+        kwargs : eg. has a key "kld_weight" to multiply the (negative) kl-divergence
+
+        Returns
+        -------
+        loss_dict : Dict of per-datapoint loss terms for the batch
+             keys are `recon_loss`, `kld`, `loss`
         """
         num_data = getattr(self.trainer.datamodule, f"n_{mode}") # Warning: this is set only after self.trainer runs its datamodule's "setup" method
-        mu, log_var, recon  = out["mu"], out["log_var"], out["recon"]
+        mu, log_var, recon = out["mu"], out["log_var"], out["recon"]
 
         recon_loss = F.mse_loss(recon, target, reduction='mean', size_average=self.size_average) # see https://github.com/pytorch/examples/commit/963f7d1777cd20af3be30df40633356ba82a6b0c
         kld = torch.mean(-0.5 * torch.sum(1 + log_var - mu ** 2 - log_var.exp(), dim = 1), dim = 0)
@@ -221,29 +236,46 @@ class BetaVAE(BaseVAE):
                num_samples:int,
                current_device: int,
                **kwargs) -> Tensor:
-        """
-        Samples from the latent space and return the corresponding
-        image space map.
-        :param num_samples: (Int) Number of samples
-        :param current_device: (Int) Device to run the model
-        :return: (Tensor)
-        """
+        """Samples from the latent space and return samples from approximate data space:
+        z ---> mu of P_x|z
 
-        z = torch.randn(num_samples, self.latent_dim)
-        z = z.to(current_device)
-        samples = self.decode(z)
-        return samples
+        Args
+        ----
+        num_samples: (Int) Number of samples
+        current_device: (Int) Device to run the model; it must be same as
+            where model weight tensors are located (ie. self.device)
 
-    def generate(self, x: Tensor, **kwargs) -> Tensor:
+        Returns
+        -------
+        samples : batch of reconstructions from sampled latent codes
         """
-        Given an input image x, returns the reconstructed image
+        self.eval()
+        with torch.no_grad():
+            z = torch.randn(num_samples, self.latent_dim)
+            z = z.to(current_device)
+            samples = self.decode(z)
+            return samples
+
+    def reconstruct(self, x: Tensor, **kwargs) -> Tensor:
+        """Given an input image x, returns the reconstructed image
         :param x: (Tensor) [B x C x H x W]
         :return: (Tensor) [B x C x H x W]
         """
+        self.eval()
+        with torch.no_grad():
+            return self.forward(x)["recon"]
 
-        return self.forward(x)["recon"]
+    def get_embedding(self, x: Tensor, **kwargs) -> Dict[str, Tensor]:
+        """Given a batch of input x, return a dict of parameters for q_z|x
+        and z|x sampled from each q_z|x
 
-    def get_embedding(self, x: Tensor, **kwargs) -> List[Tensor]:
+        Returns
+        -------
+        latent_info : Dict[str, Tensor]
+            "mu" and "log_var" of the variational distribution q_z|x for each x
+            in input batch, and a sampled latent code from each q_z|x (one for
+            each image in the batch x)
+        """
         self.eval()
         with torch.no_grad():
             mu, log_var = self.encode(x)
@@ -251,9 +283,8 @@ class BetaVAE(BaseVAE):
             return {"mu": mu, "log_var": log_var, "z": z}
 
     def training_step(self, batch, batch_idx):
-        """
-        Implements one mini-batch iteration:
-         from batch intack -> pass through model -> return loss (ie. computational graph)
+        """Implements one mini-batch iteration:
+         batch input -> pass through model (enc, reparam, dec) -> loss (ie. computational graph)
         """
         x, y = batch
         out = self(x)
@@ -271,14 +302,14 @@ class BetaVAE(BaseVAE):
         x, y = batch
         out = self(x)
         loss_dict = self.loss_function(out, x.detach().clone(), mode="val")
-        self.log('val/loss', loss_dict["loss"])
+
         self.log('val/recon_loss', loss_dict["recon_loss"])
         self.log('val/kld', loss_dict["kld"])
         self.log('val/vae_loss', loss_dict["loss"])
         self.log('val/loss', loss_dict["loss"])
 
-        if self.current_epoch % 10 == 0 and self.trainer.batch_idx % 300 == 0:
-            print(f"Ep: {self.trainer.current_epoch}, batch: {self.trainer.batch_idx}, loss: {loss_dict['loss']}")
+        if (self.current_epoch+1) % 10 == 0 and (self.trainer.batch_idx+1) % 300 == 0:
+            print(f"Ep: {self.trainer.current_epoch+1}, batch: {self.trainer.batch_idx+1}, loss: {loss_dict['loss']}")
 
         return {"val_loss": loss_dict["loss"]}
 
@@ -300,8 +331,8 @@ class BetaVAE(BaseVAE):
             'monitor': 'val_loss',
             'name': "train/lr/Adam",
         }
-
         return [optimizer], [lr_scheduler]
+
     @staticmethod
     def add_model_specific_args(parent_parser):
         parser = ArgumentParser(parents=[parent_parser], add_help=False)
@@ -310,11 +341,9 @@ class BetaVAE(BaseVAE):
         parser.add_argument('--dec_type', type=str, default="conv")
         parser.add_argument('--latent_dim', type=int, required=True)
         parser.add_argument('--hidden_dims', nargs="+", type=int) #None as default
-        parser.add_argument('--act_fn', type=str, default="leaky_relu") #todo: proper set up in main function needed via utils.py's get_act_fn function
-        # parser.add_argument('--out_fn', type=str, default="tanh")
+        parser.add_argument('--act_fn', type=str, default="leaky_relu", help="Choose relu or leaky_relu (default)") #todo: proper set up in main function needed via utils.py's get_act_fn function
+        parser.add_argument('--out_fn', type=str, default="tanh", help="Output function applied at the output layer of the decoding process. Default: tanh")
         parser.add_argument('--kld_weight', type=float, default=1.0)
         parser.add_argument('-lr', '--learning_rate', type=float, default=1e-3)
-
-
 
         return parser
