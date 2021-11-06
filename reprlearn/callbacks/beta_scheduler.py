@@ -2,7 +2,7 @@ import itertools
 import torch
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import Callback
-from src.utils.scheduler import frange_cycle_linear
+from reprlearn.utils.scheduler import frange_cycle_linear
 from argparse import ArgumentParser
 
 

@@ -1,7 +1,7 @@
 import torch
 import torchvision
 import pytorch_lightning as pl
-from src.data.transforms.functional import unnormalize
+from reprlearn.data.transforms.functional import unnormalize
 
 
 class ReconLogger(pl.Callback):
