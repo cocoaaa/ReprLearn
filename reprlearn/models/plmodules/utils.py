@@ -1,4 +1,6 @@
 from pprint import pprint
+from typing import List, Union, Optional
+from pathlib import Path
 import torch
 import pytorch_lightning as pl
 from pytorch_lightning.utilities.cloud_io import load as pl_load
@@ -25,9 +27,9 @@ def compute_kld(mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
     return kld
 
 
-def get_best_ckpt(model: pl.LightningModule,
+def get_best_ckpt_path(trainer: pl.Trainer,
                   verbose:bool = False):
-    ckpt_path = model.trainer.checkpoint_callback.best_model_path
+    ckpt_path = trainer.checkpoint_callback.best_model_path
 
     if verbose:
         ckpt = pl_load(ckpt_path, map_location=lambda storage, loc: storage)  # dict object
@@ -41,20 +43,57 @@ def get_best_ckpt(model: pl.LightningModule,
                 pprint(f"{k}:{v}")
     return ckpt_path
 
-def load_model(model: pl.LightningModule, ckpt_path: str):
-    # Inplace loading of the model state from the ckpt_path
-    # ckpt_path = get_best_ckpt((model))
+
+def get_best_k_ckpt_paths(trainer: pl.Trainer) -> List[Union[Path, str]]:
+    """Returns the training sessions' best k models' checkpoints"""
+
+    # checkpts information as a dict
+    # key: ckpt_path
+    # value: tensor of best_score (e.g. tensor(2476.12), device='cuda:0')
+    best_k_info = trainer.checkpoint_callback.best_k_models
+    return list(best_k_info.keys())
+
+
+def load_model_ckpt(model: pl.LightningModule, ckpt_path: str):
+    """**Inplace** loading of the model state from the ckpt_path"""
     ckpt = pl_load(ckpt_path, map_location=lambda storage, loc: storage)  # dict object
     model.load_state_dict(ckpt['state_dict'])
 
+
 def load_best_model(model: pl.LightningModule):
     """
-    Load the model state from the best ckpt_path recorded during the training
-    Update the model's state **inplace**
+    Load the model state **inplace** from the best ckpt_path recorded during the training
+    Update the model's state
 
     :param model: pl.LightningModule
     :return:
     """
-    ckpt_path = get_best_ckpt((model))
-    ckpt = pl_load(ckpt_path, map_location=lambda storage, loc: storage)  # dict object
-    model.load_state_dict(ckpt['state_dict'])
+    ckpt_path = get_best_ckpt_path(model.trainer)
+    load_model_ckpt(model, ckpt_path)
+
+
+def save_sample_from_model_ckpt(model: pl.LightningModule,
+                                ckpt_path: Union[Path, str],
+                                device: Union[torch.device, str],
+                                out_dir: Path,
+                                n_samples: int,
+                                out_fn_prefix: Optional[str] = None,
+                                ) -> None:
+    """model is a trained model loaded from the checkpt"""
+    if not out_dir.exists():
+        out_dir.mkdir()
+        print('Created: ', out_dir)
+
+    load_model_ckpt(model, ckpt_path)
+
+    model.to(device)
+    model.eval()
+    sample = model.sample(n_samples, device)
+
+    # Save to disk
+    prefix = '' if out_fn_prefix is None else f'{out_fn_prefix}-'
+    out_fp = out_dir / f'{prefix}{Path(ckpt_path).stem}.pkl'
+    torch.save(sample, out_fp)
+    print('Saved: ', out_fp)
+
+
