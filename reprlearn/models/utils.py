@@ -1,4 +1,22 @@
 import numpy as np
+import torch.nn as nn
+
+
+def inplace_freeze(model: nn.Module):
+    """Freezes the modle by turning off its parameter's
+    require_grad attributes. In-place operation.
+    """
+    for p in model.parameters():
+        p.requires_grad_(False)
+
+
+def inplace_unfreeze(model: nn.Module):
+    """Freezes the modle by turning off its parameter's
+    require_grad attributes. In-place operation.
+    """
+    for p in model.parameters():
+        p.requires_grad_(True)
+
 
 def compute_ks_for_conv2d(w_in: int, w_out: int, padding: int=1) -> int:
     """Compute the kernel size to use with conv2d when we want
