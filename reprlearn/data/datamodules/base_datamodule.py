@@ -64,10 +64,11 @@ class BaseDataModule(pl.LightningDataModule):
         # Keep main parameters for experiment logging
         # Alternatively, use self.save_hyperparameters method
         # self.save_hyperparameters('in_shape', 'batch_size')
-        self.hparams = {
+        # print('init hparams: ', self.hparams) # empty dictionary
+        self.hparams.update({
             "in_shape": self.in_shape,
             "batch_size": self.batch_size
-        }
+        })
 
 
     #todo: make it required
