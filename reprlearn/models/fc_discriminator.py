@@ -4,6 +4,7 @@ import numpy as np
 from .types_ import *
 
 class FCDiscriminator(nn.Module):
+
     def __init__(self,
                  in_shape: Tuple[int, int, int],
                  label_map: Optional[Dict] = None,
@@ -29,6 +30,9 @@ class FCDiscriminator(nn.Module):
         return bn
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Returns the score for being class 1
+        ie. logit, not a probability
+        """
         img_flat = x.view(x.size(0), -1)
         return self.model(img_flat)
 
