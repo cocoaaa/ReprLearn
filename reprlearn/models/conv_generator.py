@@ -79,22 +79,21 @@ class ConvGenerator(nn.Module):
        :param z: (Tensor) [B x latent_dim]
        :return: (Tensor) [B x C x H x W]: generated images
        """
-
         bs = len(z)
         # learn embedding of the latent code vector, h_z
         result = self.fc_latent2flatten(z);
-        print('after latent2flatten: ', result.shape)  # (BS, dim_embedding_z), ie. (BS, self.len_flatten)
+        # print('after latent2flatten: ', result.shape)  # (BS, dim_embedding_z), ie. (BS, self.len_flatten)
 
         # expand the latent_code vector to 3dim tensor
         result = result.view(bs, self.len_flatten, 1, 1);
-        print('after 3d expansion: ', result.shape);
+        # print('after 3d expansion: ', result.shape);
 
         # pass through main decoder layers
         result = self.decoder(result);
-        print('after decoder: ', result.shape);
+        # print('after decoder: ', result.shape);
 
         # apply output function
         x_gen = self.out_layer(result);
-        print('after out-layer: ', result.shape);
+        # print('after out-layer: ', result.shape);
         return x_gen
 
