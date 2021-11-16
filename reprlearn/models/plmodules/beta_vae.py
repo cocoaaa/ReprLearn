@@ -214,6 +214,7 @@ class BetaVAE(BaseVAE):
         -------
         loss_dict : Dict of per-datapoint loss terms for the batch
              keys are `recon_loss`, `kld`, `loss`
+             values are respective loss tensors. Nb: they are the last nodes of the training computation graph (not detached)
         """
         num_data = getattr(self.trainer.datamodule, f"n_{mode}") # Warning: this is set only after self.trainer runs its datamodule's "setup" method
         mu, log_var, recon = out["mu"], out["log_var"], out["recon"]
@@ -282,7 +283,7 @@ class BetaVAE(BaseVAE):
             z = self.reparameterize(mu, log_var)
             return {"mu": mu, "log_var": log_var, "z": z}
 
-    def training_step(self, batch, batch_idx):
+    def training_step(self, batch, batch_idx) -> Dict[str,Tensor]:
         """Implements one mini-batch iteration:
          batch input -> pass through model (enc, reparam, dec) -> loss (ie. computational graph)
         """
@@ -298,7 +299,7 @@ class BetaVAE(BaseVAE):
 
         return {'loss': loss_dict["loss"]}
 
-    def validation_step(self, batch, batch_ids):
+    def validation_step(self, batch, batch_ids) -> Dict[str,Tensor]:
         x, y = batch
         out = self(x)
         loss_dict = self.loss_function(out, x.detach().clone(), mode="val")
@@ -313,7 +314,7 @@ class BetaVAE(BaseVAE):
 
         return {"val_loss": loss_dict["loss"]}
 
-    def test_step(self, batch, batch_idx):
+    def test_step(self, batch, batch_idx) -> Dict[str,Tensor]:
         x, y = batch
         out = self(x)
         loss_dict = self.loss_function(out, x.detach().clone(), mode="test")
