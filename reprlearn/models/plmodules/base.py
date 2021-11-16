@@ -63,9 +63,9 @@ class BaseGAN(LightningModule):
     def forward(self, *inputs: Tensor) -> Tensor:
         pass
 
-    @abstractmethod
-    def loss_function(self, *inputs: Any, **kwargs) -> Tensor:
-        pass
+    # @abstractmethod
+    # def loss_function(self, *inputs: Any, **kwargs) -> Tensor:
+    #     pass
 
     @abstractmethod
     def training_step(self, *args, **kwargs):
