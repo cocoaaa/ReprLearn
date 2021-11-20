@@ -1,3 +1,4 @@
+from argparse import ArgumentParser
 import torch
 import torch.nn as nn
 import numpy as np
@@ -49,3 +50,21 @@ class FCDiscriminator(nn.Module):
         t = self.label_map['real' if is_real else 'gen']  # 0 or 1
         target_label = t * torch.ones_like(score)
         return self.loss_fn(score, target_label)
+
+    @staticmethod
+    def add_model_specific_args(parent_parser: Optional[ArgumentParser]=None) -> ArgumentParser:
+        # override existing arguments with new ones, if exists
+        if parent_parser is not None:
+            parents = [parent_parser]
+        else:
+            parents = []
+
+        parser = ArgumentParser(parents=parents, add_help=False)
+        parser.add_argument('--discr_hidden_dims', nargs="+", type=int)  # None as default
+        parser.add_argument('--discr_type', type=str, default="conv",
+                            help='type of layers, conv or resnet (if wanted with skip)')
+        parser.add_argument('--discr_act_fn', type=str, default="leaky_relu",
+                            help="Act fn for D. Choose relu or leaky_relu (default)")  # todo: proper set up in main function needed via utils.py's get_act_fn function
+        parser.add_argument('--discr_out_fn', type=str, default="tanh",
+                            help="Output fn for D.  Default tanh")
+        return parser
