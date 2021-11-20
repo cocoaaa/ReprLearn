@@ -6,7 +6,7 @@ import torch
 from torch import nn
 from torch import optim
 from torch.nn import functional as F
-from torchmetrics import Accuracy
+from pytorch_lightning.metrics import Accuracy
 
 from .base import BaseVAE
 from .utils import compute_kld
@@ -633,8 +633,14 @@ class BiVAE(BaseVAE):
         return [optimizer], [lr_scheduler]
 
     @staticmethod
-    def add_model_specific_args(parent_parser):
-        parser = ArgumentParser(parents=[parent_parser], add_help=False)
+    def add_model_specific_args(parent_parser: Optional[ArgumentParser] = None) -> ArgumentParser:
+        # override existing arguments with new ones, if exists
+        if parent_parser is not None:
+            parents = [parent_parser]
+        else:
+            parents = []
+
+        parser = ArgumentParser(parents=parents, add_help=False, conflict_handler='resolve')
         # parser.add_argument('--in_shape', nargs="3",  type=int, default=[3,64,64])
         # Required
         parser.add_argument('--latent_dim', type=int, required=True)

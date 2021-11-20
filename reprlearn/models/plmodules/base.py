@@ -3,6 +3,7 @@ from torch import nn
 from abc import abstractmethod
 import pytorch_lightning as pl
 from pytorch_lightning.core.lightning import LightningModule
+from argparse import ArgumentParser
 
 class BaseVAE(LightningModule):
     
@@ -38,6 +39,10 @@ class BaseVAE(LightningModule):
     def training_step(self, *args, **kwargs):
         pass
 
+    @staticmethod
+    def add_model_specific_args(parent_parser: Optional[ArgumentParser] = None) -> ArgumentParser:
+        pass
+
 
 class BaseGAN(LightningModule):
 
@@ -71,5 +76,15 @@ class BaseGAN(LightningModule):
     def training_step(self, *args, **kwargs):
         pass
 
-
+    @staticmethod
+    def add_model_specific_args(parent_parser: Optional[ArgumentParser] = None) -> ArgumentParser:
+        pass
+        # # override existing arguments with new ones, if exists
+        # if parent_parser is not None:
+        #     parents = [parent_parser]
+        # else:
+        #     parents = []
+        #
+        # parser = ArgumentParser(parents=parents, add_help=False, conflict_handler='resolve')
+        #
 

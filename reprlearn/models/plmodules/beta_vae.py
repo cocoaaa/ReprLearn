@@ -335,8 +335,13 @@ class BetaVAE(BaseVAE):
         return [optimizer], [lr_scheduler]
 
     @staticmethod
-    def add_model_specific_args(parent_parser):
-        parser = ArgumentParser(parents=[parent_parser], add_help=False)
+    def add_model_specific_args(parent_parser: Optional[ArgumentParser] = None) -> ArgumentParser:
+        # override existing arguments with new ones, if exists
+        if parent_parser is not None:
+            parents = [parent_parser]
+        else:
+            parents = []
+        parser = ArgumentParser(parents=parents, add_help=False, conflict_handler='resolve')
         # parser.add_argument('--in_shape', nargs=3,  type=int, required=True)
         parser.add_argument('--enc_type', type=str, default="conv")
         parser.add_argument('--dec_type', type=str, default="conv")

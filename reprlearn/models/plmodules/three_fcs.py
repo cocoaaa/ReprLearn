@@ -1,3 +1,5 @@
+from .types_ import *
+from argparse import ArgumentParser
 import torch
 import torch.nn as nn
 
@@ -134,3 +136,12 @@ class ThreeFCs(LightningModule):
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=1e-3)
 
+    @staticmethod
+    def add_model_specific_args(parent_parser: Optional[ArgumentParser] = None) -> ArgumentParser:
+        # override existing arguments with new ones, if exists
+        if parent_parser is not None:
+            parents = [parent_parser]
+        else:
+            parents = []
+        parser = ArgumentParser(parents=parents, add_help=False, conflict_handler='resolve')
+        pass

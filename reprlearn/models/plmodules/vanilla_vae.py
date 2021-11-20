@@ -294,8 +294,14 @@ class VanillaVAE(BaseVAE):
         return torch.optim.Adam(self.parameters(), lr=self.hparams.get("learning_rate"))
 
     @staticmethod
-    def add_model_specific_args(parent_parser):
-        parser = ArgumentParser(parents=[parent_parser], add_help=False)
+    def add_model_specific_args(parent_parser: Optional[ArgumentParser] = None) -> ArgumentParser:
+        # override existing arguments with new ones, if exists
+        if parent_parser is not None:
+            parents = [parent_parser]
+        else:
+            parents = []
+
+        parser = ArgumentParser(parents=parents, add_help=False, conflict_handler='resolve')
         # parser.add_argument('--in_shape', nargs=3,  type=int, required=True)
         parser.add_argument('--latent_dim', type=int, required=True)
         parser.add_argument('--hidden_dims', nargs="+", type=int) #None as default
