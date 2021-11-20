@@ -1,3 +1,5 @@
+import argparse
+from argparse import ArgumentParser
 import torch
 import torch.nn as nn
 from .types_ import *
@@ -12,18 +14,29 @@ from .utils import compute_ks_for_conv2d
 class ConvGenerator(nn.Module):
     def __init__(self, *,
                  latent_dim: int,
-                 len_flatten: int,
-                 decoder_dims: List[int],
+                 latent_emb_dim: int,
+                 dec_hidden_dims: List[int],
                  in_shape: Union[torch.Size, Tuple[int, int, int]],
                  dec_type: str = 'conv',  # 'conv' or 'resnet'
-                 act_fn: Callable = nn.LeakyReLU(),
-                 out_fn: Callable = nn.Tanh()
+                 act_fn: nn.Module = nn.LeakyReLU(),
+                 out_fn: nn.Module = nn.Tanh()
                  ):
         """Generator network with either conv2dTranspose blocks or as ResNet blocks
+        Args
+        ----
+        latent_dim : dim of noise input (z)
+        latent_emb_dim : dim of the embedding of the latent noise (z --> fully-connect --> emb_z)
+        dec_hidden_dims : number of filters in the main conv layers of the decoder/generator
+        in_shape : (nc, h, w) of input datapt
+        dec_type : decoder layer type. 'conv' or 'resnet'. If 'resnet' we use skip connections
+        act_fn : each layer's activation function. Default nn.LeakyReLU
+        out_fn : final operation's output function. Default nn.Tanh
 
+        Forward-pass flow
+        ------------------
         z (bs, latent_dim)
         #1. extend a channel dimension) and "embedding" layer for the latent code vectors
-        --> nn.Linear(latent_dim, len_flatten)
+        --> nn.Linear(latent_dim, latent_emb_dim
         #2. pass through main decov layers
         --> conv2dTranspose(in_channels=1,out_channels=decoder_dims[0],kernel...)
         --> conv2dTranspose(in_channels=decoder_dims[1], out_channels=decoder_dims[2], kernel..)
@@ -33,7 +46,7 @@ class ConvGenerator(nn.Module):
         """
         super().__init__()
         self.latent_dim = latent_dim
-        self.len_flatten = len_flatten # dim of embedding_z (h_z)
+        self.latent_emb_dim = latent_emb_dim # dim of embedding_z (h_z)
         self.in_shape = in_shape  # in order of (nc, h, w)
         self.in_channels, self.in_h, self.in_w = in_shape
         self.dec_type = dec_type
@@ -41,10 +54,10 @@ class ConvGenerator(nn.Module):
         self.out_fn = out_fn
 
         # head layer
-        self.fc_latent2flatten = nn.Linear(self.latent_dim, self.len_flatten)
+        self.fc_latent2flatten = nn.Linear(self.latent_dim, self.latent_emb_dim)
 
         # main decov layer
-        self.nfs = [len_flatten, *decoder_dims, self.in_channels]
+        self.nfs = [latent_emb_dim, *dec_hidden_dims, self.in_channels]
         if self.dec_type == 'conv':
             self.decoder = deconv_blocks(self.nfs[0],
                                        self.nfs[1:],
@@ -82,10 +95,10 @@ class ConvGenerator(nn.Module):
         bs = len(z)
         # learn embedding of the latent code vector, h_z
         result = self.fc_latent2flatten(z);
-        # print('after latent2flatten: ', result.shape)  # (BS, dim_embedding_z), ie. (BS, self.len_flatten)
+        # print('after latent2flatten: ', result.shape)  # (BS, dim_embedding_z), ie. (BS, self.latent_emb_dim)
 
         # expand the latent_code vector to 3dim tensor
-        result = result.view(bs, self.len_flatten, 1, 1);
+        result = result.view(bs, self.latent_emb_dim, 1, 1)
         # print('after 3d expansion: ', result.shape);
 
         # pass through main decoder layers
@@ -97,3 +110,25 @@ class ConvGenerator(nn.Module):
         # print('after out-layer: ', result.shape);
         return x_gen
 
+    @staticmethod
+    def add_model_specific_args(parent_parser: Optional[ArgumentParser] = None) -> ArgumentParser:
+        # override existing arguments with new ones, if exists
+        if parent_parser is not None:
+            parents = [parent_parser]
+        else:
+            parents = []
+
+        parser = ArgumentParser(parents=parents, add_help=False, conflict_handler='resolve')
+        # parser.add_argument('--in_shape', nargs=3,  type=int, required=True)
+        parser.add_argument('--latent_dim', type=int, required=True)
+        parser.add_argument('--latent_emb_dim', type=int, required=True,
+                            help='dim of embedding of noise vector') # Default None, which is set to 3*latent_dim
+        parser.add_argument('--dec_hidden_dims', nargs="+", type=int)  # None as default
+        parser.add_argument('--dec_type', type=str, default="conv",
+                            help='type of layers, conv or resnet (if wanted with skip)')
+        parser.add_argument('--gen_act_fn', type=str, default="leaky_relu",
+                            help="Choose relu or leaky_relu (default)")  # todo: proper set up in main function needed via utils.py's get_act_fn function
+        parser.add_argument('--gen_out_fn', type=str, default="tanh",
+                            help="Output function applied at the output layer of the decoding process. Default: tanh")
+
+        return parser
