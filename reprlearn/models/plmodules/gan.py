@@ -7,6 +7,7 @@ from torch import nn, optim
 import torchvision
 from pytorch_lightning.core.lightning import LightningModule
 from reprlearn.models.utils import inplace_freeze, inplace_unfreeze
+from reprlearn.utils.debugger import is_frozen, has_unfrozen_layer # todo: check these
 
 # class GAN(BaseGAN):
 class GAN(LightningModule):
@@ -16,11 +17,12 @@ class GAN(LightningModule):
                  latent_dim: int,
                  generator: nn.Module,
                  discriminator: nn.Module,
-                 learning_rate: float,
+                 lr_g: float,
+                 lr_d: float,
                  niter_D_per_G: int,
     #         label_map: Optional[Dict] = None,
                  size_average: bool = False,
-                 log_every:int = 10, #log generated images every this epoch
+                 log_every: int = 10, #log generated images every this epoch
                  n_show: int = 16,  # number of images to log at checkpt iteration
                 **kwargs,
     ):
@@ -28,7 +30,8 @@ class GAN(LightningModule):
         self.dims = in_shape
         self.in_channels, self.in_h, self.in_w = in_shape
         self.latent_dim = latent_dim
-        self.learning_rate = learning_rate
+        self.lr_g = lr_g
+        self.lr_d = lr_d
         self.niter_D_per_G = niter_D_per_G # "k" in Goodfellow2014, ie. update D k-times given G; then given the udpated D, update G once
         #         self.label_map = label_map or {"real": 1, "gen": 0}
         self.size_average = size_average
@@ -38,21 +41,28 @@ class GAN(LightningModule):
         # Optimizers: take care of them manually
         # self.automatic_optimization = False
         # see: https://github.com/PyTorchLightning/pytorch-lightning/issues/5108#issuecomment-768252625
+        self.b1 = kwargs.get('b1', None) or 0.0 #.99 #todo: find good values
+        self.b2 = kwargs.get('b2', None) or 0.99
 
-        self.b1 = kwargs.get('b1', None) or 0.50#.99 #todo: find good values
-        self.b2 = kwargs.get('b2', None) or 0.50#.99
-
+        self.n_show = n_show
+        self.log_every = log_every
         self.example_input_array = torch.zeros((2, self.latent_dim),
                                                dtype=self.dtype,
                                                device='cuda' #todo: remove
                                                )
 
         # Save kwargs to tensorboard's hparams
-        self.save_hyperparameters()
-
-        # don't need to log these as model hparams
-        self.n_show = n_show
-        self.log_every = log_every
+        self.configs = {
+            'in_shape': in_shape,
+            'latent_dim': self.latent_dim,
+            'generator': self.generator.name,
+            'discr': self.discr.name,
+            'lr_g': self.lr_g,
+            'lr_d': self.lr_d,
+            'niter_D_per_G': self.niter_D_per_G,
+            'size_average': self.size_average,
+        }
+        self.hparams.update(self.configs)
 
 
     @property
@@ -63,7 +73,14 @@ class GAN(LightningModule):
     @property
     def name(self) -> str:
         bn = "GAN"
-        return f'{bn}-{self.generator.name}-{self.discr.name}-dimz:{self.latent_dim}'
+        return (
+            f'{bn}' 
+            f'-{self.generator.name}-{self.discr.name}' 
+            f'-dimz:{self.latent_dim}' 
+            f'-lr_g:{self.lr_g}-lr_d:{self.lr_d}'
+            f'-K:{self.niter_D_per_G}'
+            f'-b1:{self.b1}-b2:{self.b2}'
+        )
 
     def input_dim(self):
         return np.prod(self.dims)
@@ -76,54 +93,6 @@ class GAN(LightningModule):
 
     def adversarial_loss(self, score: Tensor, is_real: bool):
         return self.discr.compute_loss(score, is_real)
-
-    def loss_fn_D(self, batch: Tensor, mode: str): #todo: finish it
-        # freeze G
-        # unfreeze D
-        x, _ = batch
-
-        # Generator
-        # 1. sample noise
-        z = torch.randn(x.shape[0], self.latent_dim)
-        z = z.type_as(x)
-        # 2. pass through generator
-        # continue here!!!
-        self.x_gen = self(z)
-        score = self.discr(self.x_gen)
-        # maximize log(D(x_gen)), aka. minimize -log((D(x_gen))
-        loss_G = self.discr.compute_loss(score, is_real=True)
-        # alternatively, use the modified loss function as in Goodfellow14
-        # loss_G = torch.log(nn.Sigmoid(score))
-
-        # return loss_dict = {
-        #     'loss_G': loss_G,
-        #     'loss_D_real': loss_D_real,
-        #     'loss_D_gen': loss_D_gen,
-        #     'loss_D': loss_D
-        # }
-        pass
-
-    def loss_fn_G(self, batch: Tensor, mode: str):  # todo: finish it
-        # freeze D
-        # unfreeze G
-        x, _ = batch
-
-        # Generator
-        # 1. sample noise
-        z = torch.randn(x.shape[0], self.latent_dim)
-        z = z.type_as(x)
-        # 2. pass through generator
-        self.x_gen = self(z)
-        score = self.discr(self.x_gen)
-        # maximize log(D(x_gen)), aka. minimize -log((D(x_gen))
-        loss_G = self.discr.compute_loss(score, is_real=True)
-        # alternatively, use the modified loss function as in Goodfellow14
-        # loss_G = torch.log(nn.Sigmoid(score))
-
-        # return loss_dict = {
-        #     'loss_G': loss_G,
-        # }
-        pass
 
     def sample(self, num_samples: int, current_device: int, **kwargs) -> Tensor:
         """Samples from the latent space and return samples from approximate data space:
@@ -173,8 +142,8 @@ class GAN(LightningModule):
         # with torch.no_grad(): -- handled by pl
         # let's just make sure
         # print('Debug: push_through_D_and_G...')
-        # print('\tis G in train mode: (should be false) ', self.generator.training)
-        # print('\tis D in train mode: (should be false)', self.generator.training)
+        # assert is_frozen(self.generator), 'G must be frozen!' #todo: remove
+        # assert is_frozen(self.discr), 'D must be frozen!'  #todo: remove
 
         imgs, _ = batch
         bs = len(imgs)
@@ -217,111 +186,113 @@ class GAN(LightningModule):
         loss_G = self.discr.loss_fn(score_G_gen, target_label)
 
         return {
-            "loss": loss_G, #TODO
+            # "loss": loss_G, #TODO
             "loss_G": loss_G,
             "loss_D_real": loss_D_real,
             "loss_D_gen": loss_D_gen,
             "loss_D": loss_D
         }
 
-    def training_step(self, batch, batch_idx, optimizer_idx):
+    def training_step(self, batch, batch_idx) -> None:
         """Implements one mini-batch iteration:
          batch input -> pass through model (enc, reparam, dec) -> loss (ie. computational graph)
+        Update D at every step; Update G at every K iteration.
         """
-        imgs, _ = batch
-        bs = len(imgs)
+        x_real, _ = batch
+        bs = len(x_real)
         # opt_g, opt_d = self.optimizers(use_pl_optimizer=False)
         opt_g, opt_d = self.optimizers()
 
-        ######################
-        # Update Discr, k times  #
-        ######################
-        # print('Starting k updates for D...')
+        #################################
+        # Update D  at every iteration  #
+        #################################
+        # 1. Compute loss_D_real
+        score_real = self.discr(x_real)
+        # Compute loss_D_real
+        loss_D_real = self.discr.compute_loss(score_real, is_real=True)
+
+        # 2. Compute loss_D_gen
         # freeze generator
         inplace_freeze(self.generator)
-        for k in range(self.niter_D_per_G):
-            # sample noise
-            z = torch.randn(bs, self.latent_dim)
-            z = z.type_as(imgs)
-            # print('z device: ', z.device)
+        # sample noise
+        z = torch.randn(bs, self.latent_dim)
+        z = z.type_as(x_real)
+        # pass through generator
+        x_gen = self(z).detach() # detach so that we block gradient flowing to G
+        # Get D's score on the generated data
+        score_gen = self.discr(x_gen)
+        # Compute loss_D_gen
+        loss_D_gen =self.discr.compute_loss(score_gen, is_real=False)
 
-            # pass through generator
-            x_gen = self(z).detach() # detach so that we block gradient flowing to G
-            # print('x_gen device: ', x_gen.device)
+        # Final loss_D
+        loss_D = 0.5 * (loss_D_real + loss_D_gen)
 
-            # score for generated data
-            score_gen = self.discr(x_gen)
-            # Compute loss_D_gen
-            loss_D_gen =self.discr.compute_loss(score_gen, is_real=False)
-
-            # sample mini-batch from real dataset
-            x_real, _ = self.sample_train_batch()
-            score_real = self.discr(x_real)
-            # Compute loss_D_real
-            loss_D_real = self.discr.compute_loss(score_real, is_real=True)
-
-            # loss_D
-            loss_D = 0.5 * (loss_D_real + loss_D_gen)
-
-            # Update D
-            opt_d.zero_grad()
-            self.manual_backward(loss_D, opt_d)
-            opt_d.step()
+        # 3. Compute gradients and Update D's params
+        opt_d.zero_grad()
+        self.manual_backward(loss_D)
+        opt_d.step()
         # unfreeze back the generator
         inplace_unfreeze(self.generator)
 
-        ######################
-        #  Update G once     #
-        ######################
-        # print('Starting one step update of G...')
-        # freeze D
-        inplace_freeze(self.discr)
-        # sample noise
-        z = torch.randn((bs, self.latent_dim))
-        z = z.type_as(imgs)
-        # print('z device: ', z.device)
-        # pass through generator
-        x_gen = self.generator(z)
-        score_G_gen = self.discr(x_gen)
-        loss_G = self.discr.compute_loss(score_G_gen, is_real=True)  # True bc we want D to be fooled
-        # Update G
-        opt_g.zero_grad()
-        self.manual_backward(loss_G, opt_g)
-        opt_g.step()
-
-        # unfreeze back the discriminator
-        inplace_unfreeze(self.discr)
+        ###############################
+        #  Update G at every K iter   #
+        ###############################
+        loss_G = None
+        if (batch_idx + 1) % self.niter_D_per_G == 0:
+            # print(f'Updating G at batch {batch_idx + 1}...')
+            # freeze D
+            inplace_freeze(self.discr)
+            # sample noise
+            z = torch.randn((bs, self.latent_dim))
+            z = z.type_as(x_real)
+            # pass through generator
+            x_gen = self.generator(z)
+            score_G_gen = self.discr(x_gen) # D is frozen currently
+            loss_G = self.discr.compute_loss(score_G_gen, is_real=True)  # True bc we want D to be fooled
+            # Update G
+            opt_g.zero_grad()
+            self.manual_backward(loss_G)
+            opt_g.step()
+            # unfreeze back the discriminator
+            inplace_unfreeze(self.discr)
 
         ####################################
         #  log each component of the loss  #
         ####################################
-        self.log('train/loss_G', loss_G)
         self.log('train/loss_D', loss_D)
         self.log('train/loss_D_gen', loss_D_gen)
         self.log('train/loss_D_real', loss_D_real)
+        if loss_G is not None:
+            self.log('train/loss_G', loss_G)
 
-        # Debug
-        print('train/loss_G', loss_G)
-        print('train/loss_D', loss_D)
-        print('train/loss_D_gen', loss_D_gen)
-        print('train/loss_D_real', loss_D_real)
-        breakpoint()
+        # # Debug
+        # breakpoint() # todo: strangely these breakpoints are not recognized
+        # if loss_G is not None:
+        #     print('train/loss_G: ', loss_G.item())
+        # print('train/loss_D: ', loss_D.item())
+        # print('train/loss_D_gen: ', loss_D_gen.item())
+        # print('train/loss_D_real: ', loss_D_real.item())
+        # print()
+        # breakpoint()
 
         # show/log a couple generated images
         # todo: make this into a logger callback
-        if (self.trainer.current_epoch+1) % self.log_every == 0:
-            print(f'Epoch {self.trainer.current_epoch+1} ...')
-            print(f'-- loss_G: {loss_G.item():.3f}') # detectability of x_gen, lower means harder to distinguish x_gen from real better)
-            print(f'-- loss_D_gen:  {loss_D_gen.item():.3f}')
-            print(f'-- loss_D_real:  {loss_D_real.item():.3f}')
+        if (self.trainer.current_epoch+1) % self.log_every == 0 and batch_idx == 0:
+            with torch.no_grad():
+                print(f'Epoch {self.trainer.current_epoch+1} ...')
+                print(f'-- loss_D_gen:  {loss_D_gen.item():.8f}')
+                print(f'-- loss_D_real:  {loss_D_real.item():.8f}')
+                if loss_G is not None:
+                    print(f'-- loss_G: {loss_G.item():.8f}') # detectability of x_gen, lower means harder to distinguish x_gen from real better)
+                print()
 
-            sample_x_gen = x_gen[:self.n_show]
-            grid = torchvision.utils.make_grid(sample_x_gen)
-            self.logger.experiment.add_image("generated_images", grid, self.trainer.current_epoch)  # todo: ep should be set properly
+                sample_x_gen = x_gen[:self.n_show]
+                grid = torchvision.utils.make_grid(sample_x_gen)
+                self.logger.experiment.add_image("generated_images", grid, self.trainer.current_epoch)  # todo: ep should be set properly
 
-        return {"loss": loss_G}  # TODO
+        # return {"loss": loss_G or np.inf}  # TODO # no need to return anything if we are handling the
 
-    def validation_step(self, batch, batch_ids) -> Dict[str,Tensor]:
+    def validation_step(self, batch, batch_idx) -> None:
         """Evaluate losses on validation dataset (if applicable)
         Returns a dict of the losses:
         - loss_G: current G's generative power to make images that fools current D
@@ -348,9 +319,9 @@ class GAN(LightningModule):
         self.log('val/loss_D_gen', loss_dict['loss_D_gen'])
         self.log('val/loss_D_real', loss_dict['loss_D_real'])
 
-        return {"val_loss": loss_dict['loss_G']} #TODO
+        # return {"val_loss": loss_dict['loss_G']} #TODO
 
-    def test_step(self, batch, batch_idx):
+    def test_step(self, batch, batch_idx) -> None:
         # with torch.no_grad(): -- handled by pl
         # let's just make sure
         # print('Debug: Testing...')
@@ -365,29 +336,43 @@ class GAN(LightningModule):
         self.log('test/loss_D_gen', loss_dict['loss_D_gen'])
         self.log('test/loss_D_real', loss_dict['loss_D_real'])
 
-        return {"test_loss": loss_dict['loss_G']}  # TODO
+        # return {"test_loss": loss_dict['loss_G']}  # TODO
 
     def configure_optimizers(self):
-        lr = self.learning_rate
-        b1 = self.b1
-        b2 = self.b2
-
-        opt_g = torch.optim.Adam(self.generator.parameters(), lr=lr, betas=(b1, b2))
-        opt_d = torch.optim.Adam(self.discr.parameters(), lr=lr, betas=(b1, b2))
+        opt_g = torch.optim.Adam(self.generator.parameters(), lr=self.lr_g, betas=(self.b1, self.b2))
+        opt_d = torch.optim.Adam(self.discr.parameters(), lr=self.lr_d, betas=(self.b1, self.b2))
         return opt_g, opt_d #no learning rate scheduler
 
     @staticmethod
-    def add_model_specific_args(parent_parser):
-        parser = ArgumentParser(parents=[parent_parser], add_help=False)
+    def add_model_specific_args(parent_parser: Optional[ArgumentParser] = None) -> ArgumentParser:
+        # override existing arguments with new ones, if exists
+        if parent_parser is not None:
+            parents = [parent_parser]
+        else:
+            parents = []
+        parser = ArgumentParser(parents=parents, add_help=False, conflict_handler='resolve')
         # parser.add_argument('--in_shape', nargs=3,  type=int, required=True)
-        parser.add_argument('--enc_type', type=str, default="conv")
-        parser.add_argument('--dec_type', type=str, default="conv")
+        parser.add_argument('--dec_type', type=str, default="conv",
+                            help="Generator class type; Default to conv")
+        parser.add_argument('--discr_type', type=str, default="fc",
+                            help="Discriminator class type. Default to fc (fully-connected)")
         parser.add_argument('--latent_dim', type=int, required=True)
-        parser.add_argument('--hidden_dims', nargs="+", type=int) #None as default
-        parser.add_argument('--act_fn', type=str, default="leaky_relu", help="Choose relu or leaky_relu (default)") #todo: proper set up in main function needed via utils.py's get_act_fn function
-        parser.add_argument('--out_fn', type=str, default="tanh", help="Output function applied at the output layer of the decoding process. Default: tanh")
-        parser.add_argument('--kld_weight', type=float, default=1.0)
-        parser.add_argument('-lr', '--learning_rate', type=float, default=1e-3)
+
+        parser.add_argument('--lr_g', type=float, required=True,
+                            help="Learn-rate for generator")
+        parser.add_argument('--lr_d', type=float, required=True,
+                            help="Learn-rate for discriminator")
+        parser.add_argument('--b1', type=float, default=0.90,
+                            help="b1 for Adam optimizer")
+        parser.add_argument('--b2', type=float, default=0.90,
+                            help="b2 for Adam optimizer")
+        parser.add_argument('-k', '--niter_D_per_G', type=int, required=True,
+                            dest='niter_D_per_G',
+                            help="Update D every iteration and G every k iteration")
+        parser.add_argument('--act_fn', type=str, default="leaky_relu",
+                            help="Choose relu or leaky_relu (default)") #todo: proper set up in main function needed via utils.py's get_act_fn function
+        parser.add_argument('--out_fn', type=str, default="tanh",
+                            help="Output function applied at the output layer of the decoding process. Default: tanh")
 
         return parser
 
