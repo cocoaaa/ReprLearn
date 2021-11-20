@@ -5,6 +5,7 @@
 from pathlib import Path
 from typing import List, Set, Dict, Tuple, Optional, Iterable, Mapping, Union, Callable
 import pytorch_lightning as pl
+from argparse import ArgumentParser
 
 class BaseDataModule(pl.LightningDataModule):
     """Base DataModule. Any Datamodules will inherit from this base class.
@@ -64,11 +65,10 @@ class BaseDataModule(pl.LightningDataModule):
         # Keep main parameters for experiment logging
         # Alternatively, use self.save_hyperparameters method
         # self.save_hyperparameters('in_shape', 'batch_size')
-        # print('init hparams: ', self.hparams) # empty dictionary
-        self.hparams.update({
+        self.hparams = {
             "in_shape": self.in_shape,
             "batch_size": self.batch_size
-        })
+        }
 
 
     #todo: make it required
@@ -81,3 +81,15 @@ class BaseDataModule(pl.LightningDataModule):
     def from_dict(cls, **kwargs):
         """Initialize a DataModule object from a config given as a dictionary"""
         return cls(**kwargs)
+
+    @staticmethod
+    def add_model_specific_args(parent_parser: Optional[ArgumentParser] = None) -> ArgumentParser:
+        # override existing arguments with new ones, if exists
+        if parent_parser is not None:
+            parents = [parent_parser]
+        else:
+            parents = []
+
+        parser = ArgumentParser(parents=parents, add_help=False, conflict_handler='resolve')
+        # todo: add arguments specific to this dataset module
+        return parser

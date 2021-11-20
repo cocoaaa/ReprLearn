@@ -137,8 +137,14 @@ class MonoMNISTDataModule(BaseDataModule):
                           pin_memory=self.pin_memory, num_workers=self.num_workers)
 
     @staticmethod
-    def add_model_specific_args(parent_parser):
-        parser = ArgumentParser(parents=[parent_parser], add_help=False)
+    def add_model_specific_args(parent_parser: Optional[ArgumentParser] = None) -> ArgumentParser:
+        # override existing arguments with new ones, if exists
+        if parent_parser is not None:
+            parents = [parent_parser]
+        else:
+            parents = []
+
+        parser = ArgumentParser(parents=parents, add_help=False, conflict_handler='resolve')
         parser.add_argument('--data_root', type=str, default='./')
         parser.add_argument('--in_shape', nargs=3, type=int, default=[1, 32, 32])
         parser.add_argument('-bs', '--batch_size', type=int, default=32)

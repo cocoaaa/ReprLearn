@@ -241,8 +241,14 @@ class MaptilesDataModule(BaseDataModule):
         return DataLoader(self.test_ds, batch_size=self.batch_size, pin_memory=self.pin_memory, num_workers=self.num_workers)
 
     @staticmethod
-    def add_model_specific_args(parent_parser):
-        parser = ArgumentParser(parents=[parent_parser], add_help=False)
+    def add_model_specific_args(parent_parser: Optional[ArgumentParser] = None) -> ArgumentParser:
+        # override existing arguments with new ones, if exists
+        if parent_parser is not None:
+            parents = [parent_parser]
+        else:
+            parents = []
+
+        parser = ArgumentParser(parents=parents, add_help=False, conflict_handler='resolve')
         parser.add_argument('--data_root', type=str, default='/data/hayley-old/maptiles_v2/')
         parser.add_argument('--cities', nargs="+", type=str, default=["la", "paris"])
         parser.add_argument('--styles', nargs="+", type=str, default=["CartoVoyagerNoLabels", "StamenTonerBackground"])
