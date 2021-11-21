@@ -23,7 +23,20 @@ nohup python train_gm.py --model_name beta_vae --kld_weight 70.0 \
 
 nohup python train_gm.py --model_name="iwae" --data_name="mnist" --latent_dim=10
 
+
+# Train a gan with conv generator and fc discriminator
+# log stdout and stdout to the log file while outputing them to the stream (`tee`)
+python train_gm.py --model_name conv_fc_gan --data_name mnist \
+--latent_dim 10 --latent_emb_dim 32 \
+--dec_type conv --dec_hidden_dims 256 128 64 32 \
+--data_name mnist \
+--gpu_id 1 --max_epochs 300 --batch_size 1028 \
+--lr_g 1e-4 --lr_d 1e-3 -k 1 \
+--b1 0.5 --b2 0.9 \
+--log_root /data/hayley-old/Tenanbaum2000/lightning_logs/test/11-19-2021 \
+2>&1 | tee log-"$(date +%F-%H:%M)".txt
 """
+import argparse
 import os,sys
 import re
 import math
@@ -71,24 +84,28 @@ from utils import add_base_arguments
 
 if __name__ == '__main__':
 
-    parser = ArgumentParser()
-
+    empty_parser = argparse.ArgumentParser(add_help=False) # add_help=False is important!
     # ------------------------------------------------------------------------
     # Add general arguments for this CLI script for training/testing
     # ------------------------------------------------------------------------
-    parser = add_base_arguments(parser)
-    args, unknown = parser.parse_known_args()
+    base_parser = add_base_arguments(empty_parser) # add or create a new parser obj
+    base_args, unknown = base_parser.parse_known_args()
     print("Base CLI args: ")
-    pprint(args)
-
+    pprint(base_args)
+    # breakpoint()
     # ------------------------------------------------------------------------
     # Add model/datamodule/trainer specific args
     # ------------------------------------------------------------------------
-    model_class = get_model_class(args.model_name)
-    dm_class = get_dm_class(args.data_name)
-    parser = model_class.add_model_specific_args(parser)
-    parser = dm_class.add_model_specific_args(parser)
-    parser = pl.Trainer.add_argparse_args(parser)
+    model_class = get_model_class(base_args.model_name)
+    dm_class = get_dm_class(base_args.data_name)
+
+    model_parser = model_class.add_model_specific_args(empty_parser)
+    dm_parser = dm_class.add_model_specific_args(empty_parser)
+    trainer_parser = pl.Trainer.add_argparse_args(empty_parser)
+    parents = [base_parser, model_parser, dm_parser, trainer_parser]
+
+    # Create a parser with model, datamodule, trainer arguments
+    parser = ArgumentParser(parents=parents, add_help=False, conflict_handler='resolve')
 
     # ------------------------------------------------------------------------
     # Add Callback args
@@ -101,7 +118,7 @@ if __name__ == '__main__':
     #                     help="Epoch interval to plot reconstructions of train and val samples"
     #                     )
     # Model Checkpoint Callback
-    parser.add_argument('--ckpt_metric', type=str, default='val_loss',
+    parser.add_argument('--ckpt_metric', type=str, default='val_tenenb  loss',
         help="Metric to decide (k) best model(s) to checkpoint. Default: val_loss"
     )
     parser.add_argument('--ckpt_mode', type=str, default='min',
@@ -129,6 +146,7 @@ if __name__ == '__main__':
     print("Final args: ")
     pprint(args)
 
+
     # ------------------------------------------------------------------------
     # Initialize model, datamodule, trainer using the parsered arg dict
     # ------------------------------------------------------------------------
@@ -151,7 +169,6 @@ if __name__ == '__main__':
                                              )
     log_dir = Path(tb_logger.log_dir)
     print("Log Dir: ", log_dir)
-    # breakpoint()
     if not log_dir.exists():
         log_dir.mkdir(parents=True)
         print("Created: ", log_dir)
@@ -167,7 +184,8 @@ if __name__ == '__main__':
         patience=args.stop_patience,
         mode=args.stop_mode,
     )
-    callbacks = [ckpt_callback, early_stopping_callback]
+    # callbacks = [ckpt_callback, early_stopping_callback]
+    callbacks = [ckpt_callback] # todo: for GAN, model-ckpt logger and early_stopping cb should track FID (or some kind of eval metrics)
 
     # Init trainer
     trainer_overrides = {
@@ -227,10 +245,6 @@ if __name__ == '__main__':
     start_time = time.time()
     # model.eval()
 
-
-
     print(f"Sample generation done: took {time.time() - start_time}")
 
-
-
-
+paPPP
