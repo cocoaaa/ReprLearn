@@ -215,7 +215,7 @@ class GAN(LightningModule):
         # freeze generator
         inplace_freeze(self.generator)
         # sample noise
-        z = torch.randn(bs, self.latent_dim)
+        z = torch.randn((bs, self.latent_dim))
         z = z.type_as(x_real)
         # pass through generator
         x_gen = self(z).detach() # detach so that we block gradient flowing to G
