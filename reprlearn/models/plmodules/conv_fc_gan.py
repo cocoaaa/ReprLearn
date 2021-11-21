@@ -71,14 +71,12 @@ class ConvFCGAN(GAN):
             parents = [parent_parser]
         else:
             parents = []
-
-        # Get the parser with base class's arguments added
         base_p = GAN.add_model_specific_args(parent_parser)
         gen_p = ConvGenerator.add_model_specific_args(parent_parser)
         discr_p = FCDiscriminator.add_model_specific_args(parent_parser)
         parents = [base_p, gen_p, discr_p]
-        # parents = [base_p]
-        print('parents: ', len(parents))
+
+        # Get the parser with base class's arguments added
         parser = ArgumentParser(parents=parents, add_help=False, conflict_handler='resolve')
         parser.add_argument('--lr_g', type=float, required=True,
                             help="Learn-rate for generator")
