@@ -12,7 +12,7 @@ from reprlearn.models.plmodules.vanilla_vae import VanillaVAE
 from reprlearn.models.plmodules.beta_vae import BetaVAE
 from reprlearn.models.plmodules.iwae import IWAE
 from reprlearn.models.plmodules.bilatent_vae import BiVAE
-
+from reprlearn.models.plmodules.conv_fc_gan import ConvFCGAN
 # datamodules
 from reprlearn.data.datamodules import MNISTDataModule
 from reprlearn.data.datamodules import MultiMonoMNISTDataModule
@@ -25,7 +25,8 @@ from reprlearn.data.datamodules import MultiOSMnxRDataModule
 from reprlearn.utils.misc import info
 
 
-def add_base_arguments(parser: ArgumentParser) -> ArgumentParser:
+
+def add_base_arguments(parent_parser: Optional[ArgumentParser] = None) -> ArgumentParser:
     """Define general arguments for the command line interface to run the experiment script for training/testing
     Set ArgumentParser to parse
     - model_name
@@ -34,9 +35,18 @@ def add_base_arguments(parser: ArgumentParser) -> ArgumentParser:
     - mode: fit of test
     - log_root: Root dir to save Lightning logs
     """
+    # override existing arguments with new ones, if exists
+    if parent_parser is not None:
+        parents = [parent_parser]
+    else:
+        parents = []
+    parser = ArgumentParser(parents=parents, add_help=False, conflict_handler='resolve')
     parser.add_argument("--model_name", type=str, required=True,
-                        help="Name of dataset: mnist, multi_mono_mnist, multi_rotated_mnist, maptiles, multi_maptiles, osmnx_roads")
-    parser.add_argument("--data_name", type=str, required=True)
+                        help="Name of gen models, e.g. beta_vae, iwae, bivae, \
+                        conv_fc_gan, dcgan, prog_gan, wgan, wpgan, stylegan1, stylegan2, stylegan3,  ")
+    parser.add_argument("--data_name", type=str, required=True,
+                        help="Name of dataset: mnist, multi_mono_mnist, multi_rotated_mnist, \
+                        maptiles, multi_maptiles, osmnx_roads")
     parser.add_argument("--gpu_id", type=str, required=True, help="ID of GPU to use")
     parser.add_argument("--mode", type=str, default='fit', help="fit or test")
     parser.add_argument("--log_root", type=str, default='/data/hayley-old/Tenanbaum2000/lightning_logs',
@@ -83,6 +93,7 @@ def get_model_class(model_name: str) -> object:
         "beta_vae": BetaVAE,
         "iwae": IWAE,
         "bivae": BiVAE,
+        "conv_fc_gan": ConvFCGAN,
         # TODO: Add new pl modules here
         # e.g. dcgan, prog_gan, stylegan1, stylegan2
 
@@ -192,38 +203,57 @@ def instantiate_model(args):
     kwargs = {
         'in_shape': args.in_shape, #dm.size()
         'latent_dim': args.latent_dim,
-        'hidden_dims': args.hidden_dims,
         'act_fn': act_fn,
         'out_fn': out_fn,
-        'learning_rate': args.learning_rate,
         'verbose': args.verbose,
     }
 
     # Add extra kwargs specific to each model_class
-    model_name = args.model_name
+    model_name = args.model_name.lower()
     model_class = get_model_class(model_name)
     if model_name == 'beta_vae':
         extra_kw = {
+            'hidden_dims': args.hidden_dims,
             "kld_weight": args.kld_weight,
             "enc_type": args.enc_type,
             "dec_type": args.dec_type,
+            'learning_rate': args.learning_rate,
         }
         kwargs.update(extra_kw)
 
     elif model_name == 'iwae':
-        kwargs['n_samples'] = args.n_samples
+        extra_kw = {
+            'hidden_dims': args.hidden_dims,
+            'n_samples':  args.n_samples,
+            'learning_rate': args.learning_rate,
+        }
+        kwargs.update(extra_kw)
 
     elif model_name == 'bivae':
         extra_kw = {
+            'hidden_dims': args.hidden_dims,
             "n_styles": args.n_styles,
             "adversary_dims": args.adversary_dims,
             "is_contrasive": args.is_contrasive,
+            'learning_rate': args.learning_rate,
             "kld_weight": args.kld_weight,
             "adv_loss_weight": args.adv_loss_weight,
             "enc_type": args.enc_type,
             "dec_type": args.dec_type,
         }
         kwargs.update(extra_kw)
+
+    elif model_name == 'conv_fc_gan':
+        extra_kw = {
+            "latent_emb_dim": args.latent_emb_dim,
+            "dec_type": args.dec_type,
+            "dec_hidden_dims": args.dec_hidden_dims,
+            "lr_g": args.lr_g,
+            "lr_d": args.lr_d,
+            "niter_D_per_G": args.niter_D_per_G,
+        }
+        kwargs.update(extra_kw)
+
     # TODO: Add one for new model here
 
 
