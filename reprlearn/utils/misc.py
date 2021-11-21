@@ -53,6 +53,23 @@ def mkdir(p: Path, parents=True):
         print("Created: ", p)
 
 
+def change_suffix(fp: Path, new_suffix: str) -> Path:
+    """Change the suffix of input filepath (fp) with new_suffix.
+    Returns a new Path object.
+
+    Args
+    ----
+    fp : original filepath as Path object
+    new_suffix : str; handles the case '.' is not prepended.
+        e.g.: '.png', '.config'
+    """
+    if not new_suffix.startswith('.'):
+        new_suffix = '.' + new_suffix
+    s = fp.suffix
+    new_fp = str(fp)[:-len(s)]
+    return Path(new_fp + new_suffix)
+
+
 def get_next_version(save_dir:Union[Path,str], name:str):
     """Get the version index for a file to save named in pattern of
     f'{save_dir}/{name}/version_{current_max+1}'
