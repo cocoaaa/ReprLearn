@@ -6,7 +6,7 @@ import torch
 from torch import nn
 from torch import optim
 from torch.nn import functional as F
-from pytorch_lightning.metrics import Accuracy
+from torchmetrics import Accuracy
 
 from .base import BaseVAE
 from .utils import compute_kld
