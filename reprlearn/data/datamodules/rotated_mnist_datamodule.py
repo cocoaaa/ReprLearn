@@ -6,7 +6,7 @@ import pytorch_lightning as pl
 from torch.utils.data import random_split, DataLoader, Dataset
 from torchvision import transforms
 
-from src.data.datasets.rotated_mnist import RotatedMNIST
+from reprlearn.data.datasets.rotated_mnist import RotatedMNIST
 from .base_datamodule import BaseDataModule
 
 class RotatedMNISTDataModule(BaseDataModule):

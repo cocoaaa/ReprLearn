@@ -1,5 +1,5 @@
 from argparse import ArgumentParser
-from typing import Union, Tuple
+from typing import Union, Tuple, Optional
 from pathlib import Path
 import torch
 import pytorch_lightning as pl
