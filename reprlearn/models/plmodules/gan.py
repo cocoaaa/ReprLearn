@@ -23,7 +23,7 @@ class GAN(LightningModule):
     #         label_map: Optional[Dict] = None,
                  size_average: bool = False,
                  log_every: int = 10, #log generated images every this epoch
-                 n_show: int = 16,  # number of images to log at checkpt iteration
+                 n_show: int = 64,  # number of images to log at checkpt iteration
                 **kwargs,
     ):
         super().__init__()
@@ -55,8 +55,8 @@ class GAN(LightningModule):
         self.configs = {
             'in_shape': in_shape,
             'latent_dim': self.latent_dim,
-            'generator': self.generator.name,
-            'discr': self.discr.name,
+            'generator': self.generator.name, #todo: also add generator.__class__.__name__?
+            'discr': self.discr.name, #todo: also add dicr.__class__.__name__?
             'lr_g': self.lr_g,
             'lr_d': self.lr_d,
             'niter_D_per_G': self.niter_D_per_G,
@@ -85,6 +85,16 @@ class GAN(LightningModule):
     def input_dim(self):
         return np.prod(self.dims)
 
+    def unpack(self, batch: Dict[str,Any]) -> Tuple[Tensor]:
+        """Delegate to its dataloader's unpack method
+        Unpack the batch from its dataloader to individual type of batch, e.g. batch_x, batch_y
+        or batch_x, batch_y, batch_d etc
+
+        todo: consider removing this b/c we now assume all batch is a dictionry (e.g. {'x': batch_x, 'y': batch_y}
+            as a fixed contract with the Dataset and Datamodule objects
+        """
+        return self.trainer.datamodule.unpack(batch)
+
     def on_fit_start(self, *args, **kwargs):
         print(f"{self.__class__.__name__} is called")
 
@@ -94,10 +104,10 @@ class GAN(LightningModule):
     def adversarial_loss(self, score: Tensor, is_real: bool):
         return self.discr.compute_loss(score, is_real)
 
-    def sample(self, num_samples: int, current_device: int, **kwargs) -> Tensor:
+    def sample(self, num_samples: int, current_device, **kwargs) -> Tensor:
         """Samples from the latent space and return samples from approximate data space:
         z ---> mu of P_x|z
-
+        with in no_grad() context manager.
         Args
         ----
         num_samples: (Int) Number of samples
@@ -108,10 +118,12 @@ class GAN(LightningModule):
         -------
         samples : batch of reconstructions from sampled latent codes
         """
-        self.eval()
         with torch.no_grad():
+            was_training = self.training # todo: make a context manager to handle this state putting back procedure
+            self.eval()
             z = torch.randn((num_samples, self.latent_dim), device=current_device)  # z = z.type_as(?)
             samples = self.generator(z)
+            self.train(was_training)
             return samples
 
     def sample_train_batch(self) -> [Tensor, Tensor]:
@@ -121,12 +133,19 @@ class GAN(LightningModule):
         """
         dl = deepcopy(self.train_dataloader())
         batch = next(iter(dl))
-        return batch[0].to(self.device), batch[1].to(self.device)
+        return [b.to(self.device) for b in batch]
 
-    def push_through_D_and_G(self, batch) -> Dict[str,Tensor]:
+    def push_through_D_and_G(self, batch: Dict[str,Any]) -> Dict[str,Tensor]:
         """Compute losses of G and D, using the input batch (if applicable).
         Not suitable for training_step (due to no optimizer incorporate),
-        but useful for val/test_step
+        but useful for val/test_step.
+        Note: ideally this method should be called under the `no_grad` context
+            e.g. inside the `validation_step` or `test_step` methods and
+            should not be used when tracking gradients (e.g. in `training_step`)
+
+        Args
+        ----
+        batch : (Dict[str,Any]) a batch returned by a dataloader
 
         Returns a dict of the losses:
         - loss_G: current G's generative power to make images that fools current D
@@ -144,15 +163,14 @@ class GAN(LightningModule):
         # print('Debug: push_through_D_and_G...')
         # assert is_frozen(self.generator), 'G must be frozen!' #todo: remove
         # assert is_frozen(self.discr), 'D must be frozen!'  #todo: remove
+        x_real = batch['x']
+        bs = len(x_real)
 
-        imgs, _ = batch
-        bs = len(imgs)
         ######################
         # Pass through D     #
         ######################
         # Compute loss_D_real
         # pass-through D to check how well it predicts x_real 'real'
-        x_real, _ = batch
         score_real = self.discr(x_real)
         # Compute loss_D_real
         loss_D_real = self.discr.compute_loss(score_real, is_real=True)
@@ -160,7 +178,7 @@ class GAN(LightningModule):
         # Compute loss_D_gen
         # first, sample noise
         z = torch.randn(bs, self.latent_dim)
-        z = z.type_as(imgs)
+        z = z.type_as(x_real)
         # pass through generator
         x_gen = self(z).detach()  # detach shouldn't be needed as long as PL is setting the context of 'torch.no_grad' properly?
         # score for generated data
@@ -175,7 +193,7 @@ class GAN(LightningModule):
         ######################
         # sample noise
         z = torch.randn(bs, self.latent_dim)
-        z = z.type_as(imgs)
+        z = z.type_as(x_real)
         # pass through generator
         x_gen = self(z)
         # get critic from the discriminator
@@ -193,12 +211,16 @@ class GAN(LightningModule):
             "loss_D": loss_D
         }
 
-    def training_step(self, batch, batch_idx) -> None:
+    def training_step(self, batch: Dict[str,Any], batch_idx: int) -> None:
         """Implements one mini-batch iteration:
          batch input -> pass through model (enc, reparam, dec) -> loss (ie. computational graph)
         Update D at every step; Update G at every K iteration.
+
+        Args
+        ----
+        batch : (Dict[str,Any]) a batch returned by a dataloader
         """
-        x_real, _ = batch
+        x_real = batch['x']
         bs = len(x_real)
         # opt_g, opt_d = self.optimizers(use_pl_optimizer=False)
         opt_g, opt_d = self.optimizers()
@@ -292,8 +314,14 @@ class GAN(LightningModule):
 
         # return {"loss": loss_G or np.inf}  # TODO # no need to return anything if we are handling the
 
-    def validation_step(self, batch, batch_idx) -> None:
+    def validation_step(self, batch: Dict[str,Any], batch_idx: int) -> None:
         """Evaluate losses on validation dataset (if applicable)
+
+        Args
+        ----
+        batch : (Dict[str,Any]) a batch returned by a dataloader
+
+
         Returns a dict of the losses:
         - loss_G: current G's generative power to make images that fools current D
             - NB1: also involves current D's state
@@ -321,7 +349,12 @@ class GAN(LightningModule):
 
         # return {"val_loss": loss_dict['loss_G']} #TODO
 
-    def test_step(self, batch, batch_idx) -> None:
+    def test_step(self, batch: Dict[str,Any], batch_idx: int) -> None:
+        """
+        Args
+        ----
+        batch : (Dict[str,Any]) a batch returned by a dataloader
+        """
         # with torch.no_grad(): -- handled by pl
         # let's just make sure
         # print('Debug: Testing...')
@@ -373,7 +406,8 @@ class GAN(LightningModule):
                             help="Choose relu or leaky_relu (default)") #todo: proper set up in main function needed via utils.py's get_act_fn function
         parser.add_argument('--out_fn', type=str, default="tanh",
                             help="Output function applied at the output layer of the decoding process. Default: tanh")
-
+        parser.add_argument('--n_show', type=int, default=64,
+                            help="Number of images to log to tensorboard at each ckpt") #todo: remove after implementing this as a callback
         return parser
 
 
