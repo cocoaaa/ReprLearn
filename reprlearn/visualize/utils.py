@@ -139,6 +139,8 @@ def show_batch(dm, #: BaseDataModule,
                **kwargs):
     """
     Show a batch of train data in the datamodule.
+    - dm : (pl.DataModule) must have `unpack` method which unpakcs a batch from the dataloader
+        to x,y
     -kwargs will be passed into `show_timgs` function
         - titles: a list of titles for axes; must be the same length as the number of npimgs
         - nrows
@@ -151,10 +153,8 @@ def show_batch(dm, #: BaseDataModule,
         warnings.filterwarnings("ignore", module="matplotlib*")
 
         dl = getattr(dm, f"{mode}_dataloader")()
-        x, y = next(iter(dl))
-        #todo: more general way of unpacking batch into x and y
-        # batch = next(iter(dl))
-        # x,y = dm.unpack(batch)
+        batch = next(iter(dl)) # Dict[str,Any] as the contract on my impl. of Dataset class (__getitem__ returns Dict[str,Any])
+        x = batch['x']
 
         if show_unnormalized:
             train_mean, train_std = dm.train_mean, dm.train_std
