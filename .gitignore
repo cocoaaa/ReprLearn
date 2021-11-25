@@ -23,6 +23,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Experiment logs
+scripts/data
+scripts/log*
 
 # Jupyter Notebook
 .ipynb_checkpoints
