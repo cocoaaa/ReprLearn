@@ -131,7 +131,7 @@ def instantiate_model(args):
     model_class = get_model_class(model_name)
 
     if model_name == 'iwae':
-        kwargs['n_samples'] = args.n_samples
+        kwargs['n_samples'] = args.num_generated_sample
 
     return model_class(**kwargs)
 
