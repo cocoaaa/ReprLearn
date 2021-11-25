@@ -23,7 +23,7 @@ from utils.logger import setup_logger
 
 def train(cfg):
     model = build_model(cfg)
-    device = cfg.MODEL.DEVICE
+    device = cfg.MODEL.device
 
     optimizer = make_optimizer(cfg, model)
     scheduler = None
