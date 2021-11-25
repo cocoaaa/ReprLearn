@@ -23,7 +23,7 @@ def do_train(
     log_period = cfg.SOLVER.LOG_PERIOD
     checkpoint_period = cfg.SOLVER.CHECKPOINT_PERIOD
     output_dir = cfg.OUTPUT_DIR
-    device = cfg.MODEL.DEVICE
+    device = cfg.MODEL.device
     epochs = cfg.SOLVER.MAX_EPOCHS
 
     logger = logging.getLogger("template_model.train")

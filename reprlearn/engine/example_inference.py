@@ -15,7 +15,7 @@ def inference(
         model,
         val_loader
 ):
-    device = cfg.MODEL.DEVICE
+    device = cfg.MODEL.device
 
     logger = logging.getLogger("template_model.inference")
     logger.info("Start inferencing")
