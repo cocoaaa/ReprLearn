@@ -1,17 +1,8 @@
-import os
-from typing import  Dict, Any, Iterable, Tuple
-from torchvision.datasets import MNIST
+from typing import Any, Dict, Tuple
+from torchvision.datasets import USPS
 
-class MNISTDataset(MNIST):
-    """Override __getitem__ to return a dictionary rather than the tuple
-    """
-    @property
-    def raw_folder(self) -> str:
-        return os.path.join(self.root, 'MNIST', 'raw')
 
-    @property
-    def processed_folder(self) -> str:
-        return os.path.join(self.root, 'MNIST', 'processed')
+class USPSDataset(USPS):
 
     def __getitem__(self, index: int) -> Dict[str, Any]:
         """
