@@ -1,5 +1,5 @@
 from argparse import ArgumentParser
-from typing import Union, Tuple, Optional, Callable
+from typing import Union, Tuple, Optional, Callable, Dict, Any
 from pathlib import Path
 import torch
 import pytorch_lightning as pl
@@ -13,7 +13,6 @@ class MonoMNISTDataModule(BaseDataModule):
     """Subset of MNIST dataset containing a monochrome image tensors
     Use it to make a datamodule for either Gray, Red, Green, Blue mnist (sub) datasets
     """
-
     def __init__(self, *,
                  data_root: Union[Path, str],
                  color: str,
@@ -28,7 +27,6 @@ class MonoMNISTDataModule(BaseDataModule):
                  **kwargs
                  ):
         """
-
         :param data_root: Root dir that contains "mnist_{color}.pkl" files
         :param color: One of gray, red, green, blue
         :param seed: Seed that was/will be used to split the original MNIST into 4 subsets.
@@ -54,7 +52,6 @@ class MonoMNISTDataModule(BaseDataModule):
         )
 
         # Set attributes specific to this dataset
-
         self.color = color.lower()
         assert self.color in ["gray", "red", "green", "blue"], "color must be one of gray, red, green, blue"
 
@@ -84,10 +81,10 @@ class MonoMNISTDataModule(BaseDataModule):
         })
 
 
-
     @property
     def name(self) -> str:
-        return self.full_ds.name
+        return f"MonoMNIST-{self.color}"
+        # return self.full_ds.name # Caution: valid only after `fit` method is run.
 
     def prepare_data(self):
         # If needed, save and split the original MNIST data into 4 subsets
@@ -137,6 +134,11 @@ class MonoMNISTDataModule(BaseDataModule):
                           pin_memory=self.pin_memory, num_workers=self.num_workers)
 
     @staticmethod
+    def unpack(batch: Dict[str,Any]) -> Tuple[Any,Any,Any]:
+        # Delegate it to its Dataset's classmethod unpack
+        return MonoMNIST.unpack(batch)
+
+    @staticmethod
     def add_model_specific_args(parent_parser: Optional[ArgumentParser] = None) -> ArgumentParser:
         # override existing arguments with new ones, if exists
         if parent_parser is not None:
@@ -146,7 +148,11 @@ class MonoMNISTDataModule(BaseDataModule):
 
         parser = ArgumentParser(parents=parents, add_help=False, conflict_handler='resolve')
         parser.add_argument('--data_root', type=str, default='./')
-        parser.add_argument('--in_shape', nargs=3, type=int, default=[1, 32, 32])
+        parser.add_argument('--color', type=str, required=True,
+                            help="Color of the background of MNIST. Must be one of red, green, blue, and gray")
+        parser.add_argument('--seed', type=int, default=123,
+                            help='Set random seed for spliting MNIST into 4 monochrome subsets')
+        parser.add_argument('--in_shape', nargs=3, type=int, default=[3, 32, 32])
         parser.add_argument('-bs', '--batch_size', type=int, default=32)
         parser.add_argument('--pin_memory', action="store_true", default=True)
         parser.add_argument('--num_workers', type=int, default=16)

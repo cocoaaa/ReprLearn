@@ -1,12 +1,12 @@
 from argparse import ArgumentParser
-from typing import Union, Tuple, Optional
+from typing import Union, Tuple, Optional, Any, Dict
 from pathlib import Path
 import torch
 import pytorch_lightning as pl
 from torch.utils.data import random_split, DataLoader
 
 # from torchvision.datasets import MNIST
-from reprlearn.data.datasets.mnist import MNIST
+from reprlearn.data.datasets import MNISTDataset
 from torchvision import transforms
 
 from .base_datamodule import BaseDataModule
@@ -68,23 +68,23 @@ class MNISTDataModule(BaseDataModule):
 
     def prepare_data(self):
         # download
-        MNIST(self.data_root, train=True, download=True)
-        MNIST(self.data_root, train=False, download=True)
+        MNISTDataset(self.data_root, train=True, download=True)
+        MNISTDataset(self.data_root, train=False, download=True)
 
     def setup(self, stage=None):
         print('Setting up datamodule...')
         # Assign train/val datasets for use in dataloaders
         if stage == 'fit' or stage is None:
-            full_ds = MNIST(self.data_root, train=True, transform=self.transform)
+            full_ds = MNISTDataset(self.data_root, train=True, transform=self.transform)
             self.train_ds, self.val_ds = random_split(full_ds, [self.n_train, self.n_val])
             # a bit hacky but we want to keep our MNIST class's unpack function
             self.train_ds.unpack = full_ds.unpack
             self.val_ds.unpack = full_ds.unpack
-            self.unpack = full_ds.unpack #set a classmethod for this Datmodule class
+            # self.unpack = full_ds.unpack #set a classmethod for this Datmodule class
 
         # Assign test dataset for use in dataloader(s)
         if stage == 'test' or stage is None:
-            self.test_ds = MNIST(self.data_root, train=False, transform=self.transform)
+            self.test_ds = MNISTDataset(self.data_root, train=False, transform=self.transform)
 
     def train_dataloader(self):
         return DataLoader(self.train_ds, batch_size=self.batch_size, shuffle=self.shuffle,
@@ -97,6 +97,11 @@ class MNISTDataModule(BaseDataModule):
     def test_dataloader(self):
         return DataLoader(self.test_ds, batch_size=self.batch_size,
                           pin_memory=self.pin_memory, num_workers=self.num_workers)
+
+    @staticmethod
+    def unpack(batch: Dict[str,Any]) -> Tuple[Any,Any]:
+        # Delegate it to its Dataset's classmethod unpack
+        return MNISTDataset.unpack(batch)
 
     @staticmethod
     def add_model_specific_args(parent_parser: Optional[ArgumentParser] = None) -> ArgumentParser:

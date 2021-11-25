@@ -102,15 +102,11 @@ class MultiSourceDataModule(pl.LightningDataModule):
         self.verbose = verbose
 
         # Keep main parameters for experiment logging
-        self.hparams = {
-            "n_contents": self.n_contents,
-            "n_styles": self.n_styles,
-            "source_names": self.source_names,
-            "in_shape": self.in_shape,
-            "batch_size": self.batch_size
-        }
+        self.save_hyperparameters(
+            "n_contents", "source_names", #"n_styles",
+            "in_shape","batch_size"
+        )#todo: make it required
 
-    #todo: make it required
     @property
     def name(self) -> str:
         raise NotImplementedError
@@ -118,6 +114,12 @@ class MultiSourceDataModule(pl.LightningDataModule):
     @classmethod
     def from_dict(cls, **kwargs):
         return cls(**kwargs)
+
+    @staticmethod
+    def unpack(batch):
+        # delegate it to its Dataset object
+        # consequently, any Dataset class must have unpack method (as static method)
+        raise NotImplementedError
 
     def get_content_style_reps(self, mode: str) -> np.ndarray:
         """Returns a 2d matrix whose rows are content-labels, and cols are style-labels

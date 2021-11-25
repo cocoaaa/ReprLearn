@@ -1,17 +1,14 @@
 from pathlib import Path
 from argparse import ArgumentParser
-from typing import List, Set, Dict, Tuple, Optional, Iterable, Mapping, Union, Callable
+from typing import Any, Dict, Tuple, Optional, Iterable, Union, Callable
 
 import pandas as pd
 import torch
-import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision import transforms
-import pytorch_lightning as pl
 
 from reprlearn.data.datasets.maptiles import MaptilesDataset
 from reprlearn.data.datamodules import BaseDataModule
-from ipdb import set_trace
 
 class MaptilesDataModule(BaseDataModule):
 
@@ -101,7 +98,6 @@ class MaptilesDataModule(BaseDataModule):
                 )
             ])
 
-
         # Update hparams with maptiles specifics
         self.hparams.update({"cities":  self.cities,
                             "styles": self.styles,
@@ -152,11 +148,12 @@ class MaptilesDataModule(BaseDataModule):
         pass
 
     def setup(self, stage: str, use_training_stat: bool=True):
-        """
-        This function is called on every GPU in a node/machine
-        Sets self.train_ds, self.val_ds
+        """Main method to setup this datamodule. Sets up MaptileDataset objects as
+        its self.train_ds, self.val_ds (and self.test_ds)
         -- this also configures this DataModule to have a specified transforms
         -- that will be applied to each sample in the dataset
+
+        Note: This function is called on every GPU in a node/machine
         """
         # breakpoint()
         dset = MaptilesDataset(
@@ -239,6 +236,14 @@ class MaptilesDataModule(BaseDataModule):
 
     def test_dataloader(self):
         return DataLoader(self.test_ds, batch_size=self.batch_size, pin_memory=self.pin_memory, num_workers=self.num_workers)
+
+
+    @staticmethod
+    def unpack(batch: Dict[str, Any]) -> Tuple[Any, Any, Any]:
+        # delegate it to its Dataset object
+        # consequently, any Dataset class must have unpack method (as static method)
+        return MaptilesDataset.unpack(batch)
+
 
     @staticmethod
     def add_model_specific_args(parent_parser: Optional[ArgumentParser] = None) -> ArgumentParser:

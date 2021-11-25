@@ -3,7 +3,7 @@
 # TODO:
 # Make all the datamodule classes a child of this class
 from pathlib import Path
-from typing import List, Set, Dict, Tuple, Optional, Iterable, Mapping, Union, Callable
+from typing import List, Set, Dict, Tuple, Optional, Any, Mapping, Union, Callable
 import pytorch_lightning as pl
 from argparse import ArgumentParser
 
@@ -63,9 +63,7 @@ class BaseDataModule(pl.LightningDataModule):
         self.verbose = verbose
 
         # Keep main parameters for experiment logging
-        # Alternatively, use self.save_hyperparameters method
-        # self.save_hyperparameters('in_shape', 'batch_size')
-        self.save_hyperparameters("in_shape","batch_size")
+        self.save_hyperparameters("in_shape", "batch_size")
 
 
     #todo: make it required
@@ -78,6 +76,12 @@ class BaseDataModule(pl.LightningDataModule):
     def from_dict(cls, **kwargs):
         """Initialize a DataModule object from a config given as a dictionary"""
         return cls(**kwargs)
+
+    @staticmethod
+    def unpack(batch: Dict[str,Any]) -> Tuple:
+        # delegate it to its Dataset object
+        # consequently, any Dataset class must have unpack method (as static method)
+        raise NotImplementedError
 
     @staticmethod
     def add_model_specific_args(parent_parser: Optional[ArgumentParser] = None) -> ArgumentParser:

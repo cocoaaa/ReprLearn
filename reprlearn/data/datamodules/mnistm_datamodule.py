@@ -45,10 +45,11 @@ class MNISTMDataModule(BaseDataModule):
         ])
 
         # Update hparams with MNISTM specifics
-        self.hparams.update({
-            "n_classes":  self.n_classes,
-                             })
-
+        self.hparams.update(
+            {
+                "n_classes":  self.n_classes,
+            }
+        )
 
     @property
     def name(self) -> str:
@@ -60,7 +61,6 @@ class MNISTMDataModule(BaseDataModule):
         MNISTM(self.data_root, train=False, download=True)
 
     def setup(self, stage=None):
-
         # Assign train/val datasets for use in dataloaders
         if stage == 'fit' or stage is None:
             full_ds = MNISTM(self.data_root, train=True, transform=self.transform)
@@ -92,7 +92,7 @@ class MNISTMDataModule(BaseDataModule):
 
         parser = ArgumentParser(parents=parents, add_help=False, conflict_handler='resolve')
         parser.add_argument('--data_root', type=str, default='./')
-        parser.add_argument('--in_shape', nargs=3, type=int, default=[1, 32, 32])
+        parser.add_argument('--in_shape', nargs=3, type=int, default=[3, 32, 32])
         parser.add_argument('-bs', '--batch_size', type=int, default=32)
         parser.add_argument('--pin_memory', action="store_true", default=True)
         parser.add_argument('--num_workers', type=int, default=16)
