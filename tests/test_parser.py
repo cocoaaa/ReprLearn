@@ -23,6 +23,19 @@ def test_parser_basic():
     print("args.int_gpu_id: ", args.int_gpu_id)
 
 
+def test_parser_boolean():
+    # See: stackoverflow.com/a/31347222
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--early_stop', dest='early_stop', action='store_true')
+    parser.add_argument('--no_early_stop', dest='early_stop', action='store_false')
+    parser.set_defaults(early_stop=True)
+
+    for cmd in ['--early_stop', '--no_early_stop']:
+        args = parser.parse_args(cmd.split())
+        print('cli: ', cmd)
+        print(args)
+
+
 def test_parser_conflict_handler_1():
     parent_p = argparse.ArgumentParser()
     parent_p.add_argument('--dimz', type=int, default=10)
@@ -85,8 +98,9 @@ def test_conv_fc_gan_add_model_specific_args_with_parent():
 
 if __name__ == '__main__':
     # test_parser_basic()
+    test_parser_boolean()
     # test_parser_conflict_handler_1()
     # test_parser_conflict_handler_2()
     # test_conv_gen_add_model_specific_args()
     # test_conv_fc_gan_add_model_specific_args()
-    test_conv_fc_gan_add_model_specific_args_with_parent()
+    # test_conv_fc_gan_add_model_specific_args_with_parent()
