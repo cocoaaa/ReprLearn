@@ -4,9 +4,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from pathlib import Path
-from typing import List, Set, Dict, Tuple, Optional, Iterable, Mapping, Union, Callable
+from typing import List, Set, Dict, Tuple, Optional, Iterable, Any, Union, Callable
 from torch.utils.data import Dataset
-from ipdb import set_trace as brpt
 
 from reprlearn.visualize.utils import get_fig
 
@@ -54,23 +53,34 @@ class MaptilesDataset(Dataset):
 
         self.channel_mean, self.channel_std = self.get_channelwise_mean_std(self, n_channels=self.n_channels)
 
-    def __getitem__(self, idx) -> Tuple[np.ndarray, str]:
-        """
-        Return `idx`th sample from the dataset
+    def __len__(self):
+        """Return the number of samples in the dataset"""
+        return len(self.df_fns)
 
-        -x: (np.ndarray) of 3dim H=256,W=256,C=3. Values are in range [0.,1.]
-        -y (str): style name (long/original name)
+    def __repr__(self):
+        return self.name
 
+    def __getitem__(self, index: int) -> Dict[str, Any]:
+        img, metadata = self.read_data(index)
+
+        #todo: what 'y' and 'd' mean should be flexible..
+        return {'x': img, 'y': metadata['coord'], 'd': metadata['style']}
+
+    def read_data(self, index: int) -> Tuple[np.ndarray, Dict[str, Any]]:
+        """Helper method to read image (maptile) and metadata from disk
+        Return `idx`th sample from the dataset as a dictionary
+        - 'x' : (np.ndarray) of 3dim H=256,W=256,C=3. Values are in range [0.,1.]
+        - 'y' : (str) style name (long/original name)
         """
-        *csz, fpath = self.df_fns.iloc[idx].to_list()
+        *csz, fpath = self.df_fns.iloc[index].to_list()
         try:
-            x = plt.imread(fpath)[..., :3]
+            img = plt.imread(fpath)[..., :3] #remove alpha channel
         except SyntaxError:  # read as jpg
-            x = plt.imread(fpath, format='jpg')[..., :3]
+            img = plt.imread(fpath, format='jpg')[..., :3]
 
         city, style, zoom = csz
         coord = fpath.stem.split("_")[:2] # geo-coordinates as (lng,lat)
-        label = {
+        metadata = {
             "city": city,
             "style": style,
             "zoom": zoom,
@@ -78,18 +88,17 @@ class MaptilesDataset(Dataset):
         }
 
         if self.transform is not None:
-            x = self.transform(x)
+            img = self.transform(img)
         if self.target_transform is not None:
-            label = self.target_transform(label)
+            metadata = self.target_transform(metadata)
 
-        return x, label
+        return img, metadata
 
-    def __len__(self):
-        "Return the number of samples in the dataset"
-        return len(self.df_fns)
-
-    def __repr__(self):
-        return self.name
+    @staticmethod
+    def unpack(batch: Dict[str,Any]) -> Tuple:
+        # delegate it to its Dataset object
+        # consequently, any Dataset class must have unpack method (as static method)
+        return batch['x'], batch['y'], batch['d']
 
     @property
     def name(self) -> str:
@@ -98,6 +107,7 @@ class MaptilesDataset(Dataset):
             styles_str='-'.join(self.styles),
             zooms_str='-'.join(self.zooms)
         )
+
     def make_subset(self, inds: Iterable[int],
                     transform=None,
                     target_transform=None

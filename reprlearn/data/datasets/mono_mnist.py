@@ -10,7 +10,7 @@ from .two_factor_dataset import TwoFactorDataset
 
 class MonoMNIST(TwoFactorDataset):
     """
-    - data_root: root dir that contains "mnist_{color}.pkl" files
+    - data_root: root dir that contains "[train|test]_mnist_{color}_seed-{seed}.pkl" files
     - color: str; one of "red", "green", "blue"
     - transform: a callable that works on a torch tensor for 3-channel image (3,32,32)
     - target_transform: a callable that works on a int input for digit id (0, ..., 9)
@@ -26,7 +26,8 @@ class MonoMNIST(TwoFactorDataset):
     """
     _fn_formatspec = "{mode}_mnist_{color}_seed-{seed}.pkl"
     _base_xform = transforms.ToTensor()
-    _keys = ["img", "digit", "color"] # keys of the item(a dictionary) returned by __getitem__
+    # _keys = ["img", "digit", "color"] # keys of the item(a dictionary) returned by __getitem__
+    _keys = ["x", "y", "d"] # keys of the item(a dictionary) returned by __getitem__
 
     def __init__(
             self,
@@ -61,16 +62,16 @@ class MonoMNIST(TwoFactorDataset):
         # k=digit_id (int) and v=List[PIL.Image]
         bn = self.make_basename()
         fn = self.data_root / bn
-        if not fn.exists() and download:
+        if not fn.exists():
             print(f"{fn} doesn't exist)"
                   f"\nStart processing to split the MNIST dataset into 4 subsets...")
             mnist_data_root = data_root.parent
             self.save_split_mnist(mnist_data_root, data_root, seed=self.seed,
-                                  use_train_dataset=train)
+                                  use_train_dataset=train, download=download)
 
         self.data, self.targets = joblib.load(fn)
 
-    def __getitem__(self, index: int) -> Dict[str,Any]:
+    def __getitem__(self, index: int): #todo: -> Dict[str,Any]:
         """
         Parameters
         ----------
@@ -98,13 +99,11 @@ class MonoMNIST(TwoFactorDataset):
         if self.colorstr_transform is not None:
             color = self.colorstr_transform(color)
 
-        sample = {
-            "img": img,
-            "digit": digit,
-            "color": color
-        }
-
-        return sample
+        return {
+            "x": img,
+            "y": digit,
+            "d": color
+        } # consistent use of 'x', 'y','d' as in DIVA paper (ilse2019diva)
 
     def __len__(self) -> int:
         return len(self.data)
@@ -127,7 +126,8 @@ class MonoMNIST(TwoFactorDataset):
                          mnist_data_root: Union[str,Path],
                          out_dir: Union[str,Path]=None,
                          seed: Optional[int]=None,
-                         use_train_dataset:bool=True):
+                         use_train_dataset:bool=True,
+                         download:bool=True):
         """
         Split the original MNIST dataset into 4 non-overlapping subsets of (almost)
         equal size, using a random-split.
@@ -146,6 +146,7 @@ class MonoMNIST(TwoFactorDataset):
         :param seed: Use an int to set a manual seed for a random generator that splits the
             origianl MNIST dataset into 4 subsets. Default: None
         :param use_train_dataset: True to use MNIST's training dataset, else use test dataset
+        :param download : (bool) if True download the original MNIST dataset (if not there already)
         :return: None; Saves the 4 subset datasets as a dictionary of
             key=digit_id (int) and value=List[PIL.Image]
         """
@@ -153,7 +154,7 @@ class MonoMNIST(TwoFactorDataset):
         if not out_dir.exists():
             out_dir.mkdir(parents=True)
         mode = 'train' if use_train_dataset else 'test'
-        ds = datasets.MNIST(mnist_data_root, train=use_train_dataset, download=True)
+        ds = datasets.MNIST(mnist_data_root, train=use_train_dataset, download=download)
         digits = defaultdict(list)
         for i in range(len(ds)):
             x, y = ds[i]  # PIL.Image of mode 'L' (ie. grayscale); y is int
@@ -207,7 +208,7 @@ class MonoMNIST(TwoFactorDataset):
             print("Saved: ", out_fn)
 
     @classmethod
-    def unpack(cls, batch: Dict[str, Any]) -> Tuple[Any]:
+    def unpack(cls, batch: Dict[str, Any]) -> Tuple[Any, Any, Any]:
         """Unpacks a batch as a dictionary to a tuple of (data_x, content_label, style_label),
         so that the dataloading implementation is similar to standard torch's dataset objects
 
@@ -215,13 +216,13 @@ class MonoMNIST(TwoFactorDataset):
         ----------
         batch : Dict[str,Any]
             a sample from the dataset returned by self.__getitem__(), containing the data("x"),
-            content-label and style-label
+            content-label("y") and style-label ("d")
 
         Returns
         -------
         a tuple of the data, its content label and its style label
         """
-        return (batch["img"], batch["digit"], batch["color"])
+        return batch["x"], batch["y"], batch["d"]
 
     @staticmethod
     def dict_imgs2tuple_xy(dict_imgs: Dict[int, List],

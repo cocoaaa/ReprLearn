@@ -3,15 +3,13 @@
 Modified from
 https://github.com/corenel/torchzoo/blob/master/torchzoo/datasets/mnistm.py
 """
-
-from __future__ import print_function
-
 import errno
 import os
 
 import torch
 import torch.utils.data as data
 from PIL import Image
+from typing import Any, Dict
 
 
 class MNISTM(data.Dataset):
@@ -57,7 +55,7 @@ class MNISTM(data.Dataset):
                                         self.processed_folder,
                                         self.test_file))
 
-    def __getitem__(self, index):
+    def __getitem__(self, index) -> Dict[str, Any]:
         """Get images and target for data loader.
 
         Args:
@@ -81,7 +79,7 @@ class MNISTM(data.Dataset):
         if self.target_transform is not None:
             target = self.target_transform(target)
 
-        return img, target
+        return {'x': img, 'y': target}
 
     def __len__(self):
         """Return size of dataset."""
