@@ -15,6 +15,9 @@ from reprlearn.models.plmodules.bilatent_vae import BiVAE
 from reprlearn.models.plmodules.conv_fc_gan import ConvFCGAN
 # datamodules
 from reprlearn.data.datamodules import MNISTDataModule
+from reprlearn.data.datamodules import MNISTMDataModule
+from reprlearn.data.datamodules import MonoMNISTDataModule
+from reprlearn.data.datamodules import USPSDataModule
 from reprlearn.data.datamodules import MultiMonoMNISTDataModule
 from reprlearn.data.datamodules import MultiRotatedMNISTDataModule
 from reprlearn.data.datamodules import MaptilesDataModule
@@ -23,8 +26,6 @@ from reprlearn.data.datamodules import MultiOSMnxRDataModule
 
 # src helpers
 from reprlearn.utils.misc import info
-
-
 
 def add_base_arguments(parent_parser: Optional[ArgumentParser] = None) -> ArgumentParser:
     """Define general arguments for the command line interface to run the experiment script for training/testing
@@ -75,6 +76,9 @@ def get_dm_class(dm_name:str) -> object:
     dm_name = dm_name.lower()
     return {
         'mnist': MNISTDataModule,
+        'mnistm': MNISTMDataModule,
+        'mono_mnist': MonoMNISTDataModule,
+        'usps': USPSDataModule,
         'multi_mono_mnist': MultiMonoMNISTDataModule,
         'multi_rotated_mnist': MultiRotatedMNISTDataModule,
         'maptiles': MaptilesDataModule,
@@ -114,6 +118,41 @@ def instantiate_dm(args):
             'verbose': args.verbose,
         }
         dm = MNISTDataModule(**kwargs)
+
+    elif data_name == 'mnistm':
+        kwargs = {
+            'data_root': data_root,
+            'in_shape': args.in_shape,
+            'batch_size': args.batch_size,
+            'pin_memory': args.pin_memory,
+            'num_workers': args.num_workers,
+            'verbose': args.verbose,
+        }
+        dm = MNISTMDataModule(**kwargs)
+
+    elif data_name == 'mono_mnist':
+        kwargs = {
+            'data_root': data_root,
+            'color': args.color,
+            'seed': args.seed,
+            'in_shape': args.in_shape,
+            'batch_size': args.batch_size,
+            'pin_memory': args.pin_memory,
+            'num_workers': args.num_workers,
+            'verbose': args.verbose,
+        }
+        dm = MonoMNISTDataModule(**kwargs)
+
+    elif data_name == 'usps':
+        kwargs = {
+            'data_root': data_root,
+            'in_shape': args.in_shape,
+            'batch_size': args.batch_size,
+            'pin_memory': args.pin_memory,
+            'num_workers': args.num_workers,
+            'verbose': args.verbose,
+        }
+        dm = USPSDataModule(**kwargs)
 
     elif data_name == 'maptiles':
         kwargs = {
@@ -224,7 +263,7 @@ def instantiate_model(args):
     elif model_name == 'iwae':
         extra_kw = {
             'hidden_dims': args.hidden_dims,
-            'n_samples':  args.n_samples,
+            'n_samples':  args.num_generated_sample,
             'learning_rate': args.learning_rate,
         }
         kwargs.update(extra_kw)
@@ -255,6 +294,24 @@ def instantiate_model(args):
         kwargs.update(extra_kw)
 
     # TODO: Add one for new model here
-
-
     return model_class(**kwargs)
+
+
+# ------------------------------------------------------------------------
+# helpers
+# ------------------------------------------------------------------------
+def get_sample_fp(sample_dir: Path,
+                  ckpt_path: Union[Path,str],
+                  prefix: Optional[str] = None) -> Path:
+    """Returns the file-path to the pickled file of sample,
+    generated from the model at ckpt_path state"""
+    if isinstance(ckpt_path, str):
+        ckpt_path = Path(ckpt_path)
+    prefix = '' if prefix is None else f'{prefix}-'
+    fp = sample_dir/f'{prefix}{ckpt_path.stem}.pkl'
+    return fp
+
+
+def parse_step_idx(ckpt_path: str) -> int:
+    stem = Path(ckpt_path).stem
+    return int(stem.split("=")[-1])
