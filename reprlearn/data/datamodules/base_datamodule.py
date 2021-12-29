@@ -66,7 +66,7 @@ class BaseDataModule(pl.LightningDataModule):
         self.save_hyperparameters("in_shape", "batch_size")
 
 
-    #todo: make it required
+    #todo: mark as required (e.g. @abc.abstractmethod context?)
     @property
     def name(self) -> str:
         """Name of this datamodule. Used e.g. for logging an experiment"""
@@ -77,6 +77,7 @@ class BaseDataModule(pl.LightningDataModule):
         """Initialize a DataModule object from a config given as a dictionary"""
         return cls(**kwargs)
 
+    #todo: mark as required (e.g. @abc.abstractmethod context?)
     @staticmethod
     def unpack(batch: Dict[str,Any]) -> Tuple:
         # delegate it to its Dataset object

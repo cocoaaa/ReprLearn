@@ -4,6 +4,10 @@ from torchvision.datasets import USPS
 
 class USPSDataset(USPS):
 
+    @property
+    def name(self) -> str:
+        return "USPS"
+
     def __getitem__(self, index: int) -> Dict[str, Any]:
         """
         Args:

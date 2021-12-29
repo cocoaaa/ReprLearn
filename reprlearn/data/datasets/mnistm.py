@@ -88,6 +88,10 @@ class MNISTM(data.Dataset):
         else:
             return len(self.test_data)
 
+    @property
+    def name(self) -> str:
+        return "MNIST-M"
+
     def _check_exists(self):
         return os.path.exists(os.path.join(self.root,
                                            self.processed_folder,

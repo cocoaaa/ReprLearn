@@ -91,12 +91,12 @@ class MaptilesDataModule(BaseDataModule):
         #    "coord": coord}
         # Default: returns the style label
         # -- ie. prepare a sample for the style prediction problem
-        if self.target_transform is None:
-            self.target_transform = transforms.Compose([
-                transforms.Lambda(
-                    lambda label_dict: self.style2idx[label_dict["style"]]
-                )
-            ])
+        # if self.target_transform is None:
+        #     self.target_transform = transforms.Compose([
+        #         transforms.Lambda(
+        #             lambda label_dict: self.style2idx[label_dict["style"]]
+        #         )
+        #     ])
 
         # Update hparams with maptiles specifics
         self.hparams.update({"cities":  self.cities,

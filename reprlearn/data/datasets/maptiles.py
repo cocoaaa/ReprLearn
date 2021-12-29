@@ -1,5 +1,6 @@
 import pandas as pd
 import math
+import torch
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -8,9 +9,23 @@ from typing import List, Set, Dict, Tuple, Optional, Iterable, Any, Union, Calla
 from torch.utils.data import Dataset
 
 from reprlearn.visualize.utils import get_fig
+#debug
+from IPython.core.debugger import  set_trace
 
 class MaptilesDataset(Dataset):
+    """
+    If df_fns is given, no need to construct df_fns based on `data_root`, `cities`, `styles`, `zooms`.
 
+    :param df_fns (pd.DataFrame): with columns = ['city', 'style', 'zoom', 'fpath']
+    :param data_root: e.g. Path("/data/hayley-old/maptiles_v2/")
+    :param cities: .e.g ['la', 'paris', 'london']
+    :param styles:
+    :param zooms:
+    :param transform:
+    :param target_transform:
+    :param verbose:
+    """
+    # class attributes
     _name_formatspec = "Maptiles_{cities_str}_{styles_str}_{zooms_str}"
 
     def __init__(self, *,
@@ -23,18 +38,7 @@ class MaptilesDataset(Dataset):
                  target_transform: Optional[Callable] = None,
                  df_fns: pd.DataFrame = None,
                  verbose: bool = False):
-        """
-        If df_fns is given, no need to construct df_fns based on `data_root`, `cities`, `styles`, `zooms`.
 
-        :param df_fns (pd.DataFrame): with columns = ['city', 'style', 'zoom', 'fpath']
-        :param data_root:
-        :param cities:
-        :param styles:
-        :param zooms:
-        :param transform:
-        :param target_transform:
-        :param verbose:
-        """
         self.cities = cities
         self.styles = sorted(styles)
         self.zooms = zooms
@@ -64,7 +68,12 @@ class MaptilesDataset(Dataset):
         img, metadata = self.read_data(index)
 
         #todo: what 'y' and 'd' mean should be flexible..
-        return {'x': img, 'y': metadata['coord'], 'd': metadata['style']}
+        return {
+            'x': img,
+            # 'y': np.array([int(coord_i) for coord_i in metadata['coord']]), #np.array([int(lng), int(lat)])
+            'y': metadata['city'], #todo: perhaps make a string f'{metadata['coord'][0]}-{metadata['coord'][1]}' which is 'lng-lat'
+            'd': metadata['style']
+        }
 
     def read_data(self, index: int) -> Tuple[np.ndarray, Dict[str, Any]]:
         """Helper method to read image (maptile) and metadata from disk
@@ -79,7 +88,7 @@ class MaptilesDataset(Dataset):
             img = plt.imread(fpath, format='jpg')[..., :3]
 
         city, style, zoom = csz
-        coord = fpath.stem.split("_")[:2] # geo-coordinates as (lng,lat)
+        coord = np.array(fpath.stem.split("_")[:2]) # geo-coordinates as (lng,lat)
         metadata = {
             "city": city,
             "style": style,
@@ -256,24 +265,30 @@ class MaptilesDataset(Dataset):
     def get_channelwise_mean_std(
             dset: Dataset,
             n_channels: int) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Modified: https://gist.github.com/jdhao/9a86d4b9e4f79c5330d54de991461fd6
+        """ Modified: https://gist.github.com/jdhao/9a86d4b9e4f79c5330d54de991461fd6
+
+        Assumes
+         batch = dset[ind]
+         x = batch['x'] # torch or np image of  float dtype , not uint8 image
+         # x is in range(0.0, 1.0)
+
+         Returns
+         -------
+         channel_mean : (np.ndarray of len = num_channels)
+         channel_std : (np.ndarray of length `nC`)
         """
         channel_sum = np.zeros(n_channels)
         channel_squared_sum = np.zeros(n_channels)
-        n_pixels = 0.
+        n_pixels_per_channel = 0.
         for i in range(len(dset)):
-            fpath = dset.df_fns.iloc[i]["fpath"]
-            try:
-                img = plt.imread(fpath)[..., :n_channels]
-            except SyntaxError:  # read as jpg
-                img = plt.imread(fpath, format='jpg')[..., :n_channels]
-
-            n_pixels += img.size / n_channels
+            img = dset[i]['x']
+            if isinstance(img, torch.Tensor): # flip order from (c,h,w) to (h,w,nc)
+                img = img.permute(1,2,0).numpy()
+            n_pixels_per_channel += img.size / n_channels
             channel_sum += np.sum(img, axis=(0, 1))
             channel_squared_sum += np.sum(img ** 2, axis=(0, 1))
-        channel_mean = channel_sum / n_pixels
-        channel_std = np.sqrt(channel_squared_sum / n_pixels - channel_mean ** 2)
+        channel_mean = channel_sum / n_pixels_per_channel
+        channel_std = np.sqrt(channel_squared_sum / n_pixels_per_channel - channel_mean ** 2)
         return channel_mean, channel_std
 
     @staticmethod
@@ -297,6 +312,22 @@ class MaptilesDataset(Dataset):
 
         inds0, inds1 = inds[:n0], inds[n0:]
         return dset.make_subset(inds0), dset.make_subset(inds1)
+
+
+class MapCities():
+    _cities = [
+        "amsterdam", "berlin", "boston",
+        "charlotte", "chicago", "la",
+        "london", "manhattan", "montreal",
+        "paris", "rome", "seoul",
+        "shanghai", "vegas"
+    ]
+
+    @classmethod
+    def get_names(cls) -> List:
+        return cls._cities
+
+
 
 
 class MapStyles():
@@ -344,9 +375,6 @@ class MapStyles():
     @classmethod
     def update(cls, style: str, shortname: str) -> None:
         cls._long2short[style] = shortname
-
-    def __init__(self):
-        pass
 
 
 # def test_mapstyles_long2short():

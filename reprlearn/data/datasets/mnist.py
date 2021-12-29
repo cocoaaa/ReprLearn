@@ -13,6 +13,11 @@ class MNISTDataset(MNIST):
     def processed_folder(self) -> str:
         return os.path.join(self.root, 'MNIST', 'processed')
 
+    @property
+    def name(self) -> str:
+        mode = "Train" if self.train else "Test"
+        return f"MNIST-{mode}"
+    
     def __getitem__(self, index: int) -> Dict[str, Any]:
         """
         Args:
