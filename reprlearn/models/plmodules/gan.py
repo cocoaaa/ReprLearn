@@ -9,6 +9,10 @@ from pytorch_lightning.core.lightning import LightningModule
 from reprlearn.models.utils import inplace_freeze, inplace_unfreeze
 from reprlearn.utils.debugger import is_frozen, has_unfrozen_layer # todo: check these
 
+# todo: debug
+from IPython.core.debugger import set_trace
+
+
 # class GAN(BaseGAN):
 class GAN(LightningModule):
 
@@ -211,7 +215,7 @@ class GAN(LightningModule):
             "loss_D": loss_D
         }
 
-    def training_step(self, batch: Dict[str,Any], batch_idx: int) -> None:
+    def training_step(self, batch: Dict[str,Any], batch_idx: int) -> Dict[str,Tensor]: #-> None:
         """Implements one mini-batch iteration:
          batch input -> pass through model (enc, reparam, dec) -> loss (ie. computational graph)
         Update D at every step; Update G at every K iteration.
@@ -235,7 +239,7 @@ class GAN(LightningModule):
 
         # 2. Compute loss_D_gen
         # freeze generator
-        inplace_freeze(self.generator)
+        inplace_freeze(self.generator) # todo: make freeze-unfreeze as a context manager like file open-close
         # sample noise
         z = torch.randn((bs, self.latent_dim))
         z = z.type_as(x_real)
@@ -271,6 +275,12 @@ class GAN(LightningModule):
             x_gen = self.generator(z)
             score_G_gen = self.discr(x_gen) # D is frozen currently
             loss_G = self.discr.compute_loss(score_G_gen, is_real=True)  # True bc we want D to be fooled
+
+            # Debug
+            if loss_G is None:
+                print('loss_g is None')
+                # breakpoint()
+
             # Update G
             opt_g.zero_grad()
             self.manual_backward(loss_G)
@@ -287,8 +297,6 @@ class GAN(LightningModule):
         if loss_G is not None:
             self.log('train/loss_G', loss_G)
 
-        # # Debug
-        # breakpoint() # todo: strangely these breakpoints are not recognized
         # if loss_G is not None:
         #     print('train/loss_G: ', loss_G.item())
         # print('train/loss_D: ', loss_D.item())
@@ -299,7 +307,7 @@ class GAN(LightningModule):
 
         # show/log a couple generated images
         # todo: make this into a logger callback
-        if (self.trainer.current_epoch+1) % self.log_every == 0 and batch_idx == 0:
+        if ((self.trainer.current_epoch+1) % self.log_every == 0) and ((batch_idx + 1) == self.niter_D_per_G):
             with torch.no_grad():
                 print(f'Epoch {self.trainer.current_epoch+1} ...')
                 print(f'-- loss_D_gen:  {loss_D_gen.item():.8f}')
@@ -312,7 +320,7 @@ class GAN(LightningModule):
                 grid = torchvision.utils.make_grid(sample_x_gen)
                 self.logger.experiment.add_image("generated_images", grid, self.trainer.current_epoch)  # todo: ep should be set properly
 
-        # return {"loss": loss_G or np.inf}  # TODO # no need to return anything if we are handling the
+        # return {"loss": loss_G}  # TODO # no need to return anything if we are handling optimizer updates
 
     def validation_step(self, batch: Dict[str,Any], batch_idx: int) -> None:
         """Evaluate losses on validation dataset (if applicable)
