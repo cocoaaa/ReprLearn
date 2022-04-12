@@ -62,6 +62,746 @@ class MAML(nn.Module):
             loss function for evaluating the output of a model to the target in data
         kwargs : Dict
             other specifications for model definition and training protocol
+            num_tasks_per_iter (default 32)
+            lr_meta (default 0.4)
+            lr_task (default 1e-3)
+            num_inner_steps (default 1)
+            log_every (default 10)
+            conv_nf_list : List[int]
+              list of number of filters for the convnet; this convnet encodes an image to
+              a vector of length `dim_h
+              To make the meta-model's output h to be invariant to the order of images in
+              in input (set of images), the `forward` method adds up the h from each image
+              and use it as the final latent representation of the input (support) set
+            fc_nf_list : List[int]
+              number of neurons in fully-connected layers, which receives the output of convnet
+              (flatten to 1dim vector); its last layer will output `dim_h` sized vector
+
+        """
+        super().__init__()
+        self.k_shot = k_shot
+        self.n_way = n_way
+        self.num_tasks_per_iter = kwargs.get('num_tasks_per_iter', 32)
+
+        # data sampler for kshot tasks
+        self.sampler = KShotSampler()
+        self.lr_task = kwargs.get('lr_task', 1e-3)
+        self.num_inner_steps = kwargs.get('num_inner_steps', 1)
+        self.task_loss_fn = task_loss_fn or nn.CrossEntropyLoss()
+
+        self.lr_meta = kwargs.get('lr_meta', 0.4)
+
+        in_h, in_w, in_c = in_shape
+        self.device = device
+        # log config
+        self.log_every = kwargs.get('log_every', 10) #eps
+
+        # convnet as encoder of input
+        self.conv_nf_list = kwargs.get('conv_nf_list', [64,64,64,64])
+        self.has_bn = kwargs.get('has_bn', True)
+        self.act_fn = kwargs.get('act_fn', nn.ReLU())
+        # self.convnet = conv_blocks(in_c, self.conv_nf_list, self.has_bn, self.act_fn)
+
+        # shape of the output of the convnet
+        self.last_h = int(in_h / (2 ** len(self.conv_nf_list)))
+        self.last_w = int(in_w / (2 ** len(self.conv_nf_list)))
+        self.dim_flatten = self.last_h * self.last_w * self.conv_nf_list[-1]
+
+        # fc-layer to map feature to output score vector
+        # self.fc = nn.Linear(self.dim_flatten, self.n_way)
+
+        self.net = net or nn.Sequential(
+            conv_blocks(in_c, self.conv_nf_list, self.has_bn, self.act_fn),
+            nn.Flatten(start_dim=1),
+            nn.Linear(self.dim_flatten, self.n_way, bias=True)
+        )
+
+        # initial set all grad to zero
+        # this step is needed to manually add the local gradient to global model
+        init_zero_grad(self.parameters())
+
+        # optimizer for meta-parmaeter
+        self.optim_meta = optim.Adam(self.parameters(), lr=self.lr_meta)
+
+
+    def meta_params(self) -> Dict[str, nn.Parameter]:
+        """Returns a Dict of current model's parameter name: value (as nn.Parameter).
+        Use it to the current states of theta, the meta-parameters
+        """
+        return {n: p for n, p in self.named_parameters()}
+
+    def forward(self,
+                batch_x: Union[torch.Tensor,List[torch.Tensor]],
+                ) -> torch.Tensor:
+        return self.net(batch_x)
+
+    def forward_set(self,
+                set_x: Union[torch.Tensor,List[torch.Tensor]],
+                ) -> torch.Tensor:
+        """ Encoding function for a set of inputs so that the output is invariant
+        to the permutation in the input elements
+        todo
+        :param set_x:
+        :return:
+        """
+        outs = []
+        for x in set_x:
+            x.unsqueeze_(dim=0)
+            # x = torch.unsqueeze(x, 0)
+            outs.append(self.encoder(x))  #todo: add self.encoder
+        outs = torch.stack(outs)
+        #todo: use self.fc to map feature maps to class scores
+        return outs.sum(0)
+
+    def initialize_task_model(self):
+        """Returns a dict[name,nn.Parameter] with each parameter cloned from
+        curent  model state"""
+        #       return {n:p.clone() for p in self.meta_params()}
+        return deepcopy(self)
+
+    def run_task_model(self,
+                       task_model: nn.Module,
+                       batch: Tuple[torch.Tensor, torch.Tensor],
+                       ) -> Tuple[torch.Tensor, float]:
+        """Fit the task_model (ie. learnable tensor) to the support set
+        Option1:
+        - use functional sgd
+          - con: we are choosing the most basic optimization method her
+            and also, not really a good abstraction of the general
+            optimization-based way to "adapt" the prior (meta-param)
+            to this specific task
+          - pro: sgd is easy to implement compared to other optimizers like Adam
+        Option 2:
+        - Use the existing optimizer's in `torch.optim` class
+        - Caveat: we must to make sure the updating step of the optimizer
+        (aka. optim.step()) operation is properly recorded to the original parameter
+        (from which task_model is cloned from)
+
+        Args
+        ----
+        task_model : nn.Module
+          classifier modle to train on the support set
+        batch : Tuple[torch.Tensor, torch.Tensor]
+            batch of support and query samples
+
+        Returns
+        -------
+        loss, acc : torch.Tensor, float
+        """
+        imgs, targets = batch
+        preds = task_model(imgs)  # scores
+        loss = self.task_loss_fn(preds, targets)
+        acc = (preds.argmax(dim=1) == targets).sum() / len(preds)
+        return loss, acc
+
+    def fit_to_task(self,
+                   batch: Tuple[torch.Tensor, torch.Tensor],
+                    optim_fn: Optional[Callable] = None,
+                       ) -> Tuple[nn.Module, torch.Tensor, float]:
+        """Fit the task_model (ie. learnable tensor) to the support set
+        Option1:
+        - use functional sgd
+          - con: we are choosing the most basic optimization method her
+            and also, not really a good abstraction of the general
+            optimization-based way to "adapt" the prior (meta-param)
+            to this specific task
+          - pro: sgd is easy to implement compared to other optimizers like Adam
+        Option 2:
+        - Use the existing optimizer's in `torch.optim` class
+        - Caveat: we must to make sure the updating step of the optimizer
+        (aka. optim.step()) operation is properly recorded to the original parameter
+        (from which task_model is cloned from)
+
+        Args
+        ----
+        batch : Tuple[torch.Tensor, torch.Tensor]
+            batch of support and query samples
+        mode : str ('fit' or 'eval')
+        optim_task : Optimizer
+          an instantiated torch optimizer; assumed to have the task_model's
+          parameters already registered.
+
+        Effects
+        -------
+        1. The value of the task_model (tensor) is updated as a result of the optimization
+        steps.
+        2. Each p.grad foro p in task_model.parameters() is filled with the gradients
+        from the loss on this support.
+        That is, we have updated the task_model's state based on the loss, but have not
+        zero'ed out the gradients used for the update in case we may use this gradients
+        to update the original theta parameter
+
+        Returns
+        -------
+        fit_task_model, loss_spt, acc_spt : nn.Module, torch.Tensor, float
+        """
+        # initialize an inner-optimizer if 'fit' mode
+        task_model = deepcopy(self)
+        optim_task = optim_fn or optim.SGD(task_model.parameters(), lr=self.lr_task)
+        # optim_task.zero_grad() #todo: do it here when num inner >1
+
+        # inner-loop iteration
+        loss_spt = 0.0
+        acc_spt = 0.0
+        for i in range(self.num_inner_steps):
+            loss_i, acc_i = self.run_task_model(task_model, batch)
+            loss_spt += loss_i
+            acc_spt += acc_i
+
+            # optim_task.zero_grad() # we accumulate the gradients so that we can use the average gradients (avg over inner-steps) when flowing back to meta-param
+            loss_i.backward()
+            optim_task.step()
+        # update the state of task_model if inner-training
+        loss_spt /= self.num_inner_steps
+        acc_spt /= self.num_inner_steps
+
+        # note: now the task_model has updated values in its parameter tensors
+        # also, each p.grad is filled with the gradients from the loss on this support (accumulated during iters)
+        return task_model, loss_spt, acc_spt
+
+    def outer_step(self,
+                   meta_dset: KShotImageDataset,
+                   step_idx: int,
+                   mode='train',
+                   verbose: bool=False,
+                   show: bool=False,
+                   idx2str: Optional[Dict[int,str]]=None,
+                   ):
+        """ Single update step for the meta-parameter theta
+        Args
+        ----
+        id2str : Optional[Dict[int,str]]
+            class label index to string dictionary; used when logging
+            sample of support/query to tensorboard logger
+
+        """
+        # Subsample tasks (total M number of tasks)
+        # print(f"\n === outer-step: {step_idx} ===")
+        if (step_idx+1) % self.log_every == 0:
+            print(step_idx+1, end="...")
+        self.optim_meta.zero_grad()
+        loss = 0.0
+        losses_spt= []
+        losses_q = []
+        accs_spt = []
+        accs_q = []
+        for m in range(self.num_tasks_per_iter):
+            # Prepare support and query sets
+            task_set, global2local = meta_dset.sample_task_set(self.n_way)
+            local2global = {v: k for k, v in global2local.items()}
+            sample = self.sampler.get_support_and_query(task_set,
+                                                   num_per_class=self.k_shot,
+                                                   shuffle=True,
+                                                   collate_fn=torch.stack,
+                                                   global_id2local_id=global2local)
+            support, query = sample['support'], sample['query'] #support/query: Tuple(batch_x, batch_y)
+            batch_x_spt, batch_y_spt = support
+            batch_x_q, batch_y_q = query
+
+            # Show support, query
+            if verbose and (step_idx+1)%self.log_every == 0:
+                print('Current task_set classes: ', [c for c in local2global.values()])
+                # print('batch_x_spt, batch_y_spt: ', batch_x_spt.shape, batch_y_spt.shape)
+                # print('Num of imgs per class in support: ', Counter(support[1].numpy()))
+                # print('Num of imgs per class in query: ', Counter(query[1].numpy()))
+
+            if show and (step_idx+1)%self.log_every == 0:
+                # todo: log to tensorboard
+                titles = None
+                if idx2str is not None:
+                    titles = [idx2str[local2global[y.item()]] for y in batch_y_spt]
+                show_timgs(batch_x_spt,
+                           title='support',
+                           titles=titles)
+
+                titles = None
+                if idx2str is not None:
+                    titles = [idx2str[local2global[y.item()]] for y in batch_y_q]
+                show_timgs(batch_x_q,
+                           title='query',
+                           titles=titles)
+
+
+            # Turn the list into a tensor, aka. a batch of images, targets for L(theta|support)
+            # initialize a task-learner
+            # fit the task-learner to support  (inner-loop)
+            # -- effect: in-place updates of task_learner's parameters
+            fit_task_model, loss_spt, acc_spt = self.fit_to_task(support)
+            losses_spt.append(loss_spt.item())
+            accs_spt.append(acc_spt)
+
+            # ---
+            # add gradients from inner-loop manully
+            for p_global, p_local in zip(self.parameters(), fit_task_model.parameters()):
+                p_global.grad += p_local.grad / self.num_inner_steps  #todo: p_loca.grad / self.num_inner_steps
+
+            # zero out local model's grad
+            zero_grad(fit_task_model.parameters())  # todo unnecessary?
+            # ---
+
+            # compute the loss of the fitted task-learner on query
+            loss_q, acc_q = self.run_task_model(fit_task_model, query)  # todo: why is gradient not being accum?
+            losses_q.append(loss_q.item())
+            accs_q.append(acc_q)
+
+            # loss += loss_q
+            # Update: 2022-01-08
+            # - instead, manually add the gradient loss_q wrt mcurrent meta-paameter to mata-param's grad
+            # directly, at each task-step (we will take the optimization step after all batch of tasks, though -- so no difference in doing loss =+= loss_q and them backpro + optim step)
+            loss_q.backward()
+
+            grads_prev = get_grad_ckpt(self)
+            # ---
+            # add gradients from loss_q to meta-param.grad's manually
+            for p_global, p_local in zip(self.parameters(), fit_task_model.parameters()):
+                p_global.grad += p_local.grad
+            grads_after = get_grad_ckpt(self)
+            assert not has_same_values(grads_prev, grads_after), "Meta-param's grad's should change after adding gradients from loss_q"
+
+
+            # todo: we can safely delete task and fit-task models since all of their gradient contributions are manually
+            # added to meta-parameter
+            # del task_model, fit_task_model
+
+
+        # update meta-learner
+        # loss /= self.num_tasks_per_iter
+        # self.optim_meta.zero_grad() #should not do this here! it will zero-out what we accmulated from inner-loops
+        # loss.backward() #todo: why is gradient not being accum to self.paramters.grad's?
+        # update meta-parameters using the manually accumulated gradients
+        # with torch.no_grad():
+        #     for p in self.parameters():
+        #         p /= self.num_tasks_per_iter
+        self.optim_meta.step()
+
+        # do logging
+        # print("i_meta: ", step_idx)
+        loss_spt = np.mean(losses_spt)
+        loss_q = np.mean(losses_q)
+        acc_spt = np.mean(accs_spt)
+        acc_q = np.mean(accs_q)
+        # print(f"--- loss/{mode}", loss.item())
+        # print(f"--- acc_spt/{mode}", acc_spt)
+        # print(f"--- acc_q/{mode}", acc_q)
+
+#     # do logging
+#     self.log(f"loss/{mode}", loss.item())
+#     self.log(f"acc_spt/{mode}", accs_spt.mean())
+#     self.log(f"acc_q/{mode}", accs_q.mean())
+        return {'loss_spt': loss_spt, 'loss_q': loss_q,
+                'acc_spt': acc_spt, 'acc_q': acc_q}
+
+
+#   # todo: training_step(self, batch, batch_idx)
+#   def training_step(self, meta_dset: KShotImageDataset):
+#     self.outer_step(meta_dset, mode='train')
+#     return None
+
+#   def validation_step(self, meta_dset: KShotImageDataset):
+#     self.outer_step(meta_dset, mode='train')
+#     return None
+
+
+
+#---
+
+class MAML_20220108(nn.Module):
+
+    def __init__(self,
+                 in_shape: List[int],
+                 k_shot: int,
+                 n_way: int,
+                 device: Union[str, torch.device],
+                 net: Optional[nn.Module]=None,
+                 task_loss_fn: Optional[Callable] = None,
+                 **kwargs,
+                 ):
+        """
+        MAML's meta-generator and task-learners are all of the same model-class
+        (ie. same parametric neural network).
+        They have the same dimensions and only values are different.
+
+        simple feed-forward + avaerage network
+        - convnet as feature-extractor of an image
+        - add each input image's features at `forward`
+
+        Computational graph
+        -------------------
+        input: support_set = {(x_1,y_1), ..., (x_n, y_n)}
+        self.convnet: works on each image x_i
+        self.fc: works on output (flatten to 1dim) of self.convent(x_i) and outputs a
+          vector of length `dim_h`
+        self.h2phi: expands a latent code (h) for the model parameters for this task-learner
+          to a vector of length `dim_phi` (ie., the actual model parameter's dimension)
+          This is theta_g in ICML 2019 tutorial.
+
+
+        Args
+        ----
+        in_shape: List[int]
+          shape of an input datapt, (h,w,nc)
+        k_shot : int
+            number of images per class in support/query of a task-set
+        n_way : int
+            Number of classes or target variable for each task
+        device
+            'cpu', 'cuda'
+        net : nn.Module
+            main model for n-way classification task
+        task_loss_fn : Optional[Callable]. Default to None
+            loss function for evaluating the output of a model to the target in data
+        kwargs : Dict
+            other specifications for model definition and training protocol
+            num_tasks_per_iter (default 32)
+            lr_meta (default 0.4)
+            lr_task (default 1e-3)
+            num_inner_steps (default 1)
+            log_every (default 10)
+            conv_nf_list : List[int]
+              list of number of filters for the convnet; this convnet encodes an image to
+              a vector of length `dim_h
+              To make the meta-model's output h to be invariant to the order of images in
+              in input (set of images), the `forward` method adds up the h from each image
+              and use it as the final latent representation of the input (support) set
+            fc_nf_list : List[int]
+              number of neurons in fully-connected layers, which receives the output of convnet
+              (flatten to 1dim vector); its last layer will output `dim_h` sized vector
+
+        """
+        super().__init__()
+        self.k_shot = k_shot
+        self.n_way = n_way
+        self.num_tasks_per_iter = kwargs.get('num_tasks_per_iter', 32)
+
+        # data sampler for kshot tasks
+        self.sampler = KShotSampler()
+        self.lr_task = kwargs.get('lr_task', 1e-3)
+        self.num_inner_steps = kwargs.get('num_inner_steps', 1)
+        self.task_loss_fn = task_loss_fn or nn.CrossEntropyLoss()
+
+        self.lr_meta = kwargs.get('lr_meta', 0.4)
+
+        in_h, in_w, in_c = in_shape
+        self.device = device
+        # log config
+        self.log_every = kwargs.get('log_every', 10) #eps
+
+        # convnet as encoder of input
+        self.conv_nf_list = kwargs.get('conv_nf_list', [64,64,64,64])
+        self.has_bn = kwargs.get('has_bn', True)
+        self.act_fn = kwargs.get('act_fn', nn.ReLU())
+        # self.convnet = conv_blocks(in_c, self.conv_nf_list, self.has_bn, self.act_fn)
+
+        # shape of the output of the convnet
+        self.last_h = int(in_h / (2 ** len(self.conv_nf_list)))
+        self.last_w = int(in_w / (2 ** len(self.conv_nf_list)))
+        self.dim_flatten = self.last_h * self.last_w * self.conv_nf_list[-1]
+
+        # fc-layer to map feature to output score vector
+        # self.fc = nn.Linear(self.dim_flatten, self.n_way)
+
+        self.net = net or nn.Sequential(
+            conv_blocks(in_c, self.conv_nf_list, self.has_bn, self.act_fn),
+            nn.Flatten(start_dim=1),
+            nn.Linear(self.dim_flatten, self.n_way, bias=True)
+        )
+
+        # initial set all grad to zero
+        # this step is needed to manually add the local gradient to global model
+        init_zero_grad(self.parameters())
+
+        # optimizer for meta-parmaeter
+        self.optim_meta = optim.Adam(self.parameters(), lr=self.lr_meta)
+
+    def meta_params(self) -> Dict[str, nn.Parameter]:
+        """Returns a Dict of current model's parameter name: value (as nn.Parameter).
+        Use it to the current states of theta, the meta-parameters
+        """
+        return {n: p for n, p in self.named_parameters()}
+
+    def forward(self,
+                batch_x: Union[torch.Tensor,List[torch.Tensor]],
+                ) -> torch.Tensor:
+        return self.net(batch_x)
+
+    def forward_set(self,
+                set_x: Union[torch.Tensor,List[torch.Tensor]],
+                ) -> torch.Tensor:
+        """ Encoding function for a set of inputs so that the output is invariant
+        to the permutation in the input elements
+        todo
+        :param set_x:
+        :return:
+        """
+        outs = []
+        for x in set_x:
+            x.unsqueeze_(dim=0)
+            # x = torch.unsqueeze(x, 0)
+            outs.append(self.encoder(x))  #todo: add self.encoder
+        outs = torch.stack(outs)
+        #todo: use self.fc to map feature maps to class scores
+        return outs.sum(0)
+
+    def initialize_task_model(self):
+        """Returns a dict[name,nn.Parameter] with each parameter cloned from
+        curent  model state"""
+        #       return {n:p.clone() for p in self.meta_params()}
+        return deepcopy(self)
+
+    def run_task_model(self,
+                       task_model: nn.Module,
+                       batch: Tuple[torch.Tensor, torch.Tensor],
+                       mode: str,
+                       optim_task: Optional[torch.optim.Optimizer] = None,
+                       ) -> Tuple[torch.Tensor, float]:
+        """Fit the task_model (ie. learnable tensor) to the support set
+        Option1:
+        - use functional sgd
+          - con: we are choosing the most basic optimization method her
+            and also, not really a good abstraction of the general
+            optimization-based way to "adapt" the prior (meta-param)
+            to this specific task
+          - pro: sgd is easy to implement compared to other optimizers like Adam
+        Option 2:
+        - Use the existing optimizer's in `torch.optim` class
+        - Caveat: we must to make sure the updating step of the optimizer
+        (aka. optim.step()) operation is properly recorded to the original parameter
+        (from which task_model is cloned from)
+
+        Args
+        ----
+        task_model : nn.Module
+          classifier modle to train on the support set
+        batch : Tuple[torch.Tensor, torch.Tensor]
+            batch of support and query samples
+        mode : str ('fit' or 'eval')
+        optim_task : Optimizer
+          an instantiated torch optimizer; assumed to have the task_model's
+          parameters already registered.
+
+        Effects
+        -------
+        1. The value of the task_model (tensor) is updated as a result of the optimization
+        steps.
+        2. Each p.grad foro p in task_model.parameters() is filled with the gradients
+        from the loss on this support.
+        That is, we have updated the task_model's state based on the loss, but have not
+        zero'ed out the gradients used for the update in case we may use this gradients
+        to update the original theta parameter
+
+        Returns
+        -------
+        loss, acc : torch.Tensor, float
+        """
+        assert mode.lower() in ['fit', 'eval'], f'mode must be either fit or eval: {mode}'
+
+        # initialize an inner-optimizer if 'fit' mode
+        if mode == 'fit':
+            optim_task = optim_task or optim.SGD(task_model.parameters(), lr=self.lr_task)
+            optim_task.zero_grad() #todo: do it here when num inner >1
+
+        # inner-loop iteration
+        loss = 0.0
+        acc = 0.0
+        for i in range(self.num_inner_steps):
+            imgs, targets = batch
+            preds = task_model(imgs)  # scores
+            loss_i = self.task_loss_fn(preds, targets)
+            acc_i = (preds.argmax(dim=1) == targets).sum() / len(preds)
+            loss += loss_i #purely for record, not for backprop
+            acc += acc_i
+            # --- debug
+            # print('=== Task model: inside run_task_model ===')
+            # for n, p in task_model.named_parameters():
+            #     print(n, p.grad_fn)
+            # breakpoint()
+            if mode == 'fit':
+                # optim_task.zero_grad() # todo: comment out if num-inner>1 b.c. note we accumulate the gradients so that we can use the average gradients (avg over inner-steps) when flowing back to meta-param
+                #todo: change to local_model and global-model
+                loss_i.backward()
+                optim_task.step()
+        # update the state of task_model if inner-training
+        loss /= self.num_inner_steps
+        acc /= self.num_inner_steps
+
+        # note: now the task_model has updated values in its parameter tensors
+        # also, each p.grad is filled with the gradients from the loss on this support
+        return loss, acc
+
+    def outer_step(self,
+                   meta_dset: KShotImageDataset,
+                   step_idx: int,
+                   mode='train',
+                   verbose: bool=False,
+                   show: bool=False,
+                   idx2str: Optional[Dict[int,str]]=None,
+                   ):
+        """ Single update step for the meta-parameter theta
+        Args
+        ----
+        id2str : Optional[Dict[int,str]]
+            class label index to string dictionary; used when logging
+            sample of support/query to tensorboard logger
+
+        """
+        # Subsample tasks (total M number of tasks)
+        # print(f"\n === outer-step: {step_idx} ===")
+        if (step_idx+1) %self.log_every == 0:
+            print(step_idx+1, end="...")
+        self.optim_meta.zero_grad()
+        loss = 0.0
+        accs_spt = []
+        accs_q = []
+        for m in range(self.num_tasks_per_iter):
+            # Prepare support and query sets
+            task_set, global2local = meta_dset.sample_task_set(self.n_way)
+            local2global = {v: k for k, v in global2local.items()}
+            sample = self.sampler.get_support_and_query(task_set,
+                                                   num_per_class=self.k_shot,
+                                                   shuffle=True,
+                                                   collate_fn=torch.stack,
+                                                   global_id2local_id=global2local)
+            support, query = sample['support'], sample['query'] #support/query: Tuple(batch_x, batch_y)
+            batch_x_spt, batch_y_spt = support
+            batch_x_q, batch_y_q = query
+
+            # Show support, query
+            if verbose and (step_idx+1)%self.log_every == 0:
+                print('batch_x_spt, batch_y_spt: ', batch_x_spt.shape, batch_y_spt.shape)
+                print('Num of imgs per class in support: ', Counter(support[1].numpy()))
+                print('Num of imgs per class in query: ', Counter(query[1].numpy()))
+            if show and (step_idx+1)%self.log_every == 0:
+                # todo: log to tensorboard
+                titles = None # todo
+                # titles = [idx2str[local2global[y.item()]] for y in batch_y_spt]
+                show_timgs(batch_x_spt,
+                           title='support',
+                           titles=titles)
+                # titles = [idx2str[local2global[y.item()]] for y in batch_y_q]
+                show_timgs(batch_x_q,
+                           title='query',
+                           titles=titles)
+
+            # Turn the list into a tensor, aka. a batch of images, targets for L(theta|support)
+            # initialize a task-learner
+            task_model = deepcopy(self)# self.initialize_task_model()
+
+            # fit the task-learner to support  (inner-loop)
+            # -- effect: in-place updates of task_learner's parameters
+            _, acc_spt = self.run_task_model(task_model, support, mode='fit')
+            accs_spt.append(acc_spt)
+
+            # add gradients from inner-loop manully
+            for p_global, p_local in zip(self.parameters(), task_model.parameters()):
+                p_global.grad += p_local.grad  #todo: p_loca.grad / self.num_inner_steps
+
+            # zero out local modle's grad
+            zero_grad(task_model.parameters())  # todo unnecessary?
+
+            # compute the loss of the fitted task-learner on query
+            # update: 2022-01-08
+            fit_task_model = deepcopy(task_model)
+            loss_q, acc_q = self.run_task_model(fit_task_model, query, mode='eval')  # todo: why is gradient not being accum?
+            accs_q.append(acc_q)
+            loss += loss_q # purely record tracking purpose. we will not call backprop on this `loss`
+            # Update: 2022-01-08
+            # - instead, manually add the gradient loss_q wrt mcurrent meta-paameter to mata-param's grad
+            # directly, at each task-step (we will take the optimization step after all batch of tasks, though -- so no difference in doing loss =+= loss_q and them backpro + optim step)
+            loss_q.backward()
+            grads_prev = get_grad_ckpt(self)
+            for p_global, p_local in zip(self.parameters(), fit_task_model.parameters()):
+                p_global.grad += p_local.grad
+            grads_after = get_grad_ckpt(self)
+            assert not has_same_values(grads_prev, grads_after), "Meta-param's grad's should change after adding gradients from loss_q"
+
+
+            # todo: we can safely delete task and fit-task models since all of their gradient contributions are manually
+            # added to meta-parameter
+            # del task_model, fit_task_model
+
+
+        # update meta-learner
+        # loss /= self.num_tasks_per_iter
+        # self.optim_meta.zero_grad() #should not do this here! it will zero-out what we accmulated from inner-loops
+        # loss.backward() #todo: why is gradient not being accum to self.paramters.grad's?
+        # update meta-parameters using the manually accumulated gradients
+        self.optim_meta.step()
+
+        # do logging
+        # print("i_meta: ", step_idx)
+        acc_spt = np.mean(accs_spt)
+        acc_q = np.mean(accs_q)
+        # print(f"--- loss/{mode}", loss.item())
+        # print(f"--- acc_spt/{mode}", acc_spt)
+        # print(f"--- acc_q/{mode}", acc_q)
+
+#     # do logging
+#     self.log(f"loss/{mode}", loss.item())
+#     self.log(f"acc_spt/{mode}", accs_spt.mean())
+#     self.log(f"acc_q/{mode}", accs_q.mean())
+        return {'loss': loss, 'acc_spt': acc_spt, 'acc_q': acc_q}
+
+
+#   # todo: training_step(self, batch, batch_idx)
+#   def training_step(self, meta_dset: KShotImageDataset):
+#     self.outer_step(meta_dset, mode='train')
+#     return None
+
+#   def validation_step(self, meta_dset: KShotImageDataset):
+#     self.outer_step(meta_dset, mode='train')
+#     return None
+
+
+
+
+# archive
+class MAML_20220107(nn.Module):
+
+    def __init__(self,
+                 in_shape: List[int],
+                 k_shot: int,
+                 n_way: int,
+                 device: Union[str, torch.device],
+                 net: Optional[nn.Module]=None,
+                 task_loss_fn: Optional[Callable] = None,
+                 **kwargs,
+                 ):
+        """
+        MAML's meta-generator and task-learners are all of the same model-class
+        (ie. same parametric neural network).
+        They have the same dimensions and only values are different.
+
+        simple feed-forward + avaerage network
+        - convnet as feature-extractor of an image
+        - add each input image's features at `forward`
+
+        Computational graph
+        -------------------
+        input: support_set = {(x_1,y_1), ..., (x_n, y_n)}
+        self.convnet: works on each image x_i
+        self.fc: works on output (flatten to 1dim) of self.convent(x_i) and outputs a
+          vector of length `dim_h`
+        self.h2phi: expands a latent code (h) for the model parameters for this task-learner
+          to a vector of length `dim_phi` (ie., the actual model parameter's dimension)
+          This is theta_g in ICML 2019 tutorial.
+
+
+        Args
+        ----
+        in_shape: List[int]
+          shape of an input datapt, (h,w,nc)
+        k_shot : int
+            number of images per class in support/query of a task-set
+        n_way : int
+            Number of classes or target variable for each task
+        device
+            'cpu', 'cuda'
+        net : nn.Module
+            main model for n-way classification task
+        task_loss_fn : Optional[Callable]. Default to None
+            loss function for evaluating the output of a model to the target in data
+        kwargs : Dict
+            other specifications for model definition and training protocol
             num_tasks_per_iter
             lr_meta
             lr_task
@@ -306,54 +1046,48 @@ class MAML(nn.Module):
                 p_global.grad += p_local.grad
 
             # zero out local modle's grad
-            zero_grad(task_model.parameters()) #todo check
+            zero_grad(task_model.parameters())  # todo check
+            # --- debug: works
+            # print('=== Task model: after zero-grad ===')
+            # for n, p in task_model.named_parameters():
+            #     print(n, p.flatten(0)[:3], p.grad.flatten(0)[:3])
+            # breakpoint()
 
             # compute the loss of the fitted task-learner on query
-            loss_q, acc_q = self.run_task_model(task_model, query, mode='eval') #todo: why is gradient not being accum?
+            # update: 2022-01-08
+            fit_task_model = deepcopy(task_model)
+            loss_q, acc_q = self.run_task_model(fit_task_model, query,
+                                                mode='eval')  # todo: why is gradient not being accum?
             accs_q.append(acc_q)
-            loss += loss_q
+            loss += loss_q # purely record tracking purpose. we will not call backprop on this `loss`
+            # Update: 2022-01-08
+            # - instead, manually add the gradient loss_q wrt mcurrent meta-paameter to mata-param's grad
+            # directly, at each task-step (we will take the optimization step after all batch of tasks, though -- so no difference in doing loss =+= loss_q and them backpro + optim step)
+            loss_q.backward()
+            grads_prev = get_grad_ckpt(self)
+            for p_global, p_local in zip(self.parameters(), fit_task_model.parameters()):
+                p_global.grad += p_local.grad
+            grads_after = get_grad_ckpt(self)
+            assert not has_same_values(grads_prev, grads_after), "Meta-param's grad's should change after adding gradients from loss_q"
 
-        loss /= self.num_tasks_per_iter
-        # # -- debug
-        # print('--- meta-model: before update')
-        grads_prev = get_grad_ckpt(self)
-        # for n, p in self.named_parameters():
-        #     print(n, p.flatten(0)[:3], end=', ')
-        #     if p.grad is not None:
-        #         print(p.grad.flatten()[:3])
-        #     else:
-        #         print('p.grad is None')
-        #     break
+            # # check of the gradient changed
+            # print("-- Check: grad after loss_spt.grad and after loss_q.grad")
+            # print("\t .grad values same? (should be False): ", has_same_values(grads_prev, grads_after)) #okay
+            # breakpoint()
 
-        # set task_learner's grad to zero
+
+            # todo: we can safely delete task and fit-task models since all of their gradient contributions are manually
+            # added to meta-parameter
+            # del task_model, fit_task_model
+
+        # loss /= self.num_tasks_per_iter
 
         # update meta-learner
         # self.optim_meta.zero_grad() #should not do this here! it will zero-out what we accmulated from inner-loops
-        # print('loss: ', loss),
-        # breakpoint()
-        loss.backward() #todo: why is gradient not being accum to self.paramters.grad's?
-        # # -- debug
-        # print('--- meta-model: after backprop')
-        grads_after_bp = get_grad_ckpt(self)
-        # for n, p in self.named_parameters():
-        #     print(n, p.flatten(0)[:3], end=', ')
-        #     if p.grad is not None:
-        #         print(p.grad.flatten()[:3])
-        #     else:
-        #         print('p.grad is None')
-        #     break
+        # loss.backward() #todo: why is gradient not being accum to self.paramters.grad's?
+
+        # update meta-parameters using the manually accumulated gradients
         self.optim_meta.step()
-        # # -- debug
-        # print('--- meta-model: after optim step')
-        grads_after_update = get_grad_ckpt(self)
-        # for n, p in self.named_parameters():
-        #     print(n, p.flatten(0)[:3], end=', ')
-        #     if p.grad is not None:
-        #         print(p.grad.flatten()[:3])
-        #     else:
-        #         print('p.grad is None')
-        #     break
-        # breakpoint()
 
 
         # -- debug: check if gradients are changing as expected
@@ -380,6 +1114,8 @@ class MAML(nn.Module):
 #     self.log(f"acc_spt/{mode}", accs_spt.mean())
 #     self.log(f"acc_q/{mode}", accs_q.mean())
         return {'loss': loss, 'acc_spt': acc_spt, 'acc_q': acc_q}
+
+
 #   # todo: training_step(self, batch, batch_idx)
 #   def training_step(self, meta_dset: KShotImageDataset):
 #     self.outer_step(meta_dset, mode='train')
