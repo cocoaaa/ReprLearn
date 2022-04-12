@@ -1,21 +1,26 @@
 from collections import defaultdict
-from typing import Iterable, Optional, Callable, List, Dict, Tuple
+from typing import Iterable, Optional, Callable, List, Dict, Union
 import numpy as np
-from torch.utils.data import Dataset
+from PIL import Image
+from pathlib import Path
+import torch
+from torch.utils.data import Dataset, DataLoader
+import joblib
+from reprlearn.utils.misc import has_img_suffix
 from sklearn.model_selection import StratifiedShuffleSplit
 
 class ImageDataset(Dataset):
 
     def __init__(self,
                  imgs: np.ndarray,
-                 classes: List[int],
+                 targets: Union[torch.IntTensor, List[int]],
                  img_xform: Optional[Callable] = None):
         """
         Args
         ----
         imgs : np.ndarray
             Array of uint8 images; (N, 32, 32, 3)
-        classes : List[int]
+        targets : List[int]
             List of integers indicating classes
         img_xform : Optional[Callable]
             Transformation to be applied to each item. First `transform` object
@@ -23,7 +28,8 @@ class ImageDataset(Dataset):
         """
         super().__init__()
         self.imgs = imgs
-        self.targets = classes
+        self.targets = targets
+        self.unique_classes = np.unique(self.targets)
         self.img_xform = img_xform
 
     def __getitem__(self, ind: int):
@@ -35,57 +41,6 @@ class ImageDataset(Dataset):
 
     def __len__(self):
         return len(self.imgs)
-
-    def create_task_set(
-            self,
-            task_classes: List[int],
-            query_ratio: float=0.2,
-            seed=123,
-        )-> Dict[str, Dataset]:
-        """Create a task set (which has two types of dataset for the same task
-        (e.g., same classification task of N-way, K-shot for the same task-classes)
-        which has support and query sets.
-        The support set is used for 'adaptation': optimize the current, given
-         meta-parameter to fit to this particular task.
-        The query set is used to update the meta-parameter (so that the meta-programmer
-        generates a good task-learner, where 'good' is measured by the generated
-        task-learner's performance on this query set (equivalent to the usual 'test' set)
-
-        Args
-        ----
-        query_ratio : float in [0,1]
-            the ratio of the size of query_set to the size of the support_set
-        seed : int
-            random seed for split to create support, query sets
-
-        Returns
-        -------
-
-        """
-        is_p = 0 <= query_ratio and query_ratio <= 1
-        assert is_p, "query_ratio must be a probability, ie. a float in range[0,1]"
-
-        # filter the (x,y)'s so that y is a member of task_classes
-        is_member = [c in task_classes for c in self.targets]
-        task_imgs = self.imgs[is_member]
-        task_ys = self.targets[is_member]
-
-        # split to support, query images as the usual split of train/test dataset
-        # for training a task-learner (ie. a classifier)
-        sss = StratifiedShuffleSplit(n_splits=1, test_size=query_ratio, random_state=seed)
-        sss.get_n_splits(task_imgs, task_ys)
-        for support_inds,  query_inds in sss.split(task_imgs, task_ys):
-            support = ImageDataset(
-                imgs=task_imgs[support_inds],
-                classes=task_ys[support_inds],
-                img_xform=self.img_xform
-            )
-            query = ImageDataset(
-                imgs=task_imgs[query_inds],
-                classes=task_ys[query_inds],
-                img_xform=self.img_xform
-            )
-            return {'support': support, 'query': query}
 
 # helper to create an ImageDataset object given classes indices
 def create_dset_of_classes(imgs: np.ndarray,
@@ -108,8 +63,66 @@ def create_dset_of_classes(imgs: np.ndarray,
     """
     is_member = [c in selected_classes for c in classes]
     return ImageDataset(imgs=imgs[is_member],
-                        classes=classes[is_member],
+                        targets=classes[is_member],
                         img_xform=img_xform)
+
+
+class ImageFolderDataset(Dataset):
+    """ returns  (image, img_filename)
+    transform: optional[callable]: applied to the image if not None
+
+    """
+    def __init__(self, img_dir, transform=None):
+        self.img_dir = img_dir
+        self.img_fps = [
+            img_fp for img_fp in img_dir.iterdir()
+            if img_fp.is_file() and has_img_suffix(img_fp)
+        ]
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.img_fps)
+
+    def __getitem__(self, idx):
+        img = Image.open(self.img_fps[idx])
+
+        if self.transform is not None:
+            img = self.transform(img)
+        return img, self.img_fps[idx].name
+
+
+    def collect_all_timgs(self,
+                      batch_size:int=64) -> torch.Tensor:
+        dl = DataLoader(self, batch_size=batch_size)
+        all_timgs = []
+        for batch in dl:
+            batch_imgs, batch_fns = batch
+            all_timgs.append(batch_imgs)
+        all_timgs = torch.stack(all_timgs, dim=0)
+        return all_timgs
+
+
+    def pickle_all_imgs(self,
+                        batch_size: int,
+                        out_fp: Path,
+    ) -> Path:
+        """Assumes data_dir has the structure of:
+        <data_dir>
+        | - xxx.png
+        | - xxy.png
+        | -...
+        Returns
+        -------
+            path to the output pickled file of a torch.Tensor (n_imgs, nc, h, w)
+        """
+        all_timgs = self.collect_timgs(batch_size)
+        joblib.dump(all_timgs, out_fp)
+        print("Saved pickled file of all timgs: ", out_fp)
+        return out_fp
+
+
+
+
 
 
 
