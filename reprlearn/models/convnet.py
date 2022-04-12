@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 from collections import OrderedDict
 from typing import Callable, List, Optional
@@ -25,6 +26,102 @@ class DummyConvNet(nn.Module):
         out = out.reshape(out.size(0), -1)
         out = self.fc(out)
         return out
+
+
+class DummyConvNet2(nn.Module):
+    # Convolutional neural network (two convolutional layers)
+
+    def __init__(self, num_classes=10):
+        super().__init__()
+        self.layer1 = nn.Sequential(
+            nn.Conv2d(1, 16, kernel_size=5, stride=1, padding=2),
+            nn.BatchNorm2d(16),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2))
+        self.layer2 = nn.Sequential(
+            nn.Conv2d(16, 32, kernel_size=5, stride=1, padding=2),
+            nn.BatchNorm2d(32),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2))
+        self.fc = nn.Linear(7 * 7 * 32, num_classes)
+
+    def forward(self, x):
+        out = self.layer1(x)
+        out = self.layer2(out)
+        out = out.reshape(out.size(0), -1)
+        out = self.fc(out)
+        return out
+
+
+
+class FourLayerConvNet(nn.Module):
+    # convnet used in Vinloly 2016 and MAML 2018
+    # References:
+    # original code by cbfinn:
+    #   https://tinyurl.com/y53r9uaz
+    # pytorch version by dragen1860:
+    #   https://github.com/dragen1860/MAML-Pytorch/blob/master/omniglot_train.py#L16
+    conv_config = {'kernel_size': 3, 'stride': 2, 'padding': 1}
+
+    def __init__(self,
+                 in_shape: List[int],
+                 num_classes: int,
+                 nf_list: Optional[List[int]] = None,
+                 act_fn: Optional[Callable] = nn.ReLU()
+                 ):
+        """
+
+        :param in_shape:  h,w,num_channels
+        :param num_classes: number 0f classes in target varible
+        :param nf_list: list of number of filters at each conv-layer
+        :param act_fn:
+        """
+        super().__init__()
+        self.nf_list = nf_list or [64, 64, 64, 64]
+        self.num_classes = num_classes
+        self.in_h, self.in_w, self.in_c = in_shape
+        self.out_h = self.in_h // (2**4)
+        self.out_w = self.in_w // (2**4)
+        self.dim_flatten = self.nf_list[-1] * self.out_h * self.out_w
+        print(self.out_h, self.out_h, self.nf_list[-1],self.dim_flatten)
+
+        self.block1 = nn.Sequential(
+            nn.Conv2d(self.in_c, self.nf_list[0], **self.conv_config),
+            act_fn,
+        )
+
+        self.block2 = nn.Sequential(
+            nn.BatchNorm2d(self.nf_list[0]),
+            nn.Conv2d(self.nf_list[0], self.nf_list[1], **self.conv_config),
+            act_fn
+        )
+
+        self.block3 = nn.Sequential(
+            nn.BatchNorm2d(self.nf_list[1]),
+            nn.Conv2d(self.nf_list[1], self.nf_list[2], **self.conv_config),
+            act_fn
+        )
+        self.block4 = nn.Sequential(
+            nn.BatchNorm2d(self.nf_list[2]),
+            nn.Conv2d(self.nf_list[2], self.nf_list[3], **self.conv_config),
+            act_fn
+        )
+        self.norm4fc = nn.BatchNorm2d(self.nf_list[-1])
+
+        self.fc = nn.Sequential(
+            # nn.BatchNorm1d(self.dim_flatten), # todo: not sure if it's okay to add it here
+            nn.Linear(self.dim_flatten, self.num_classes, bias=True)
+        )
+
+    def forward(self, x: torch.Tensor):
+        out = self.block1(x)
+        out = self.block2(out)
+        out = self.block3(out)
+        out = self.block4(out)
+        out = self.norm4fc(out)
+        out = out.view(len(out), -1)
+        return self.fc(out)
+
 
 
 def conv_block(
