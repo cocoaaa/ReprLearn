@@ -1,5 +1,7 @@
 from pathlib import Path
 import math
+from PIL import Image
+from functools import partial
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
@@ -8,7 +10,7 @@ import pytorch_lightning as pl
 from typing import Tuple, Iterable, Optional, Union, List
 import warnings
 
-from reprlearn.utils.misc import info
+from reprlearn.utils.misc import info, has_img_suffix
 from reprlearn.data.transforms.functional import unnormalize
 
 """
@@ -21,6 +23,62 @@ TODO:
         
 
 """
+
+def get_ith_npimg(img_dir: Path, ind: int, show:bool=True) -> np.ndarray:
+    """
+    Return the `ind`th image in `img_dir` assuming the imag_dir is strauctured as:
+    <img_dir>
+        |- <fn1>.png
+        |- <fn2>.png
+        |- ...
+
+    :param img_dir: directory that contains images
+    :param ind: `ind`th image will be returned
+    :param show: bool to show the loaded image
+    :return:
+    """
+    i = 0
+    for img_fp in img_dir.iterdir():
+        if img_fp.is_file() and has_img_suffix(img_fp):
+            if i == ind:
+                #                 print('found')
+                pil_img = Image.open(img_fp)
+                npimg = np.array(pil_img)
+                if show:
+                    plt.title(i)
+                    plt.imshow(npimg)
+                    plt.axis('off')
+                return npimg
+            else:
+                i += 1
+
+
+get_first_npimg = partial(get_ith_npimg, ind=0)
+
+
+def normalize_timg_ip(tensor: torch.Tensor,
+                      value_range: Optional[Tuple[int, int]] = None) -> None:
+    """ In-place normalization of a single tensor
+    Modified from src: torchvision.utils.make_grid"""
+    tensor = tensor.clone()  # avoid modifying tensor in-place
+    if value_range is not None:
+        assert isinstance(value_range, tuple), \
+            "value_range has to be a tuple (min, max) if specified. min and max are numbers"
+
+    def norm_ip(img, low, high):
+        "in-place operation"
+        img.clamp_(min=low, max=high)
+        img.sub_(low).div_(max(high - low, 1e-5))
+
+    def norm_range(t, value_range):
+        if value_range is not None:
+            norm_ip(t, value_range[0], value_range[1])
+        else:
+            norm_ip(t, float(t.min()), float(t.max()))
+    norm_range(tensor, value_range)
+    return tensor
+
+
 def get_fig(n_total: int, nrows: int=None, factor=3.0) -> Tuple[plt.Figure, plt.Axes]:
     """Create a tuple of plt.Figure and plt.Axes with total number of subplots `n_total` with `nrows` number of rows.
     By default, nrows and ncols are sqrt of n_total.
