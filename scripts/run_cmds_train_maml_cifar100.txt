@@ -1,0 +1,141 @@
+# 2022-01-13 (R)
+# note: all the these runs are using each step's (meta)loss as the **sum**
+# of each task loss_q, rather than the average
+# until the "2022-01-13(R) -- evening" log
+nohup python train_maml_cifar100.py \
+--gpu_id 3 \
+--max_meta_iter 10000  --k_shot 4 --n_way 5  \
+--train_bs 16 --eval_bs 32 --max_iter_for_eval 10 \
+--lr_meta 1e-3 --lr_task 0.1 &
+
+nohup python train_maml_cifar100.py \
+--gpu_id 0 \
+--max_meta_iter 10000  --k_shot 4 --n_way 5  \
+--train_bs 16 --eval_bs 32 --max_iter_for_eval 10 \
+--lr_meta 3e-3 --lr_task 0.1 &
+
+nohup python train_maml_cifar100.py \
+--gpu_id 0 \
+--max_meta_iter 10000  --k_shot 4 --n_way 5  \
+--train_bs 16 --eval_bs 32 --max_iter_for_eval 10 \
+--lr_meta 3e-3 --lr_task 0.3 &
+
+
+nohup python train_maml_cifar100.py \
+--gpu_id 0 \
+--max_meta_iter 10000  --k_shot 4 --n_way 5  \
+--train_bs 32 --eval_bs 32 --max_iter_for_eval 10 \
+--lr_meta 3e-3 --lr_task 0.3 &
+
+
+
+nohup python train_maml_cifar100.py \
+--gpu_id 3 \
+--max_meta_iter 10000  --k_shot 4 --n_way 5  \
+--train_bs 32 --eval_bs 32 --max_iter_for_eval 10 \
+--lr_meta 1e-3 --lr_task 0.1 &
+
+
+nohup python train_maml_cifar100.py \
+--gpu_id 3 \
+--max_meta_iter 10000  --k_shot 4 --n_way 5  \
+--train_bs 32 --eval_bs 32 --max_iter_for_eval 10 \
+--lr_meta 3e-3 --lr_task 0.1 &
+
+
+nohup python train_maml_cifar100.py \
+--gpu_id 0 \
+--max_meta_iter 10000  --k_shot 4 --n_way 5  \
+--train_bs 32 --eval_bs 32 --max_iter_for_eval 10 \
+--lr_meta 3e-3 --lr_task 0.3 &
+
+
+
+# 8shot, 5ways
+nohup python train_maml_cifar100.py \
+--gpu_id 0 \
+--max_meta_iter 10000  --k_shot 8 --n_way 5  \
+--train_bs 32 --eval_bs 32 --max_iter_for_eval 10 \
+--lr_meta 3e-3 --lr_task 0.3 &
+
+nohup python train_maml_cifar100.py \
+--gpu_id 0 \
+--max_meta_iter 50000  --k_shot 8 --n_way 5  \
+--train_bs 32 --eval_bs 32 --max_iter_for_eval 10 \
+--lr_meta 3e-3 --lr_task 0.1 &
+
+
+nohup python train_maml_cifar100.py \
+--gpu_id 0 \
+--max_meta_iter 50000  --k_shot 8 --n_way 5  \
+--train_bs 32 --eval_bs 32 --max_iter_for_eval 10 \
+--lr_meta 3e-3 --lr_task 0.3 &
+
+
+nohup python train_maml_cifar100.py \
+--gpu_id 0 \
+--max_meta_iter 50000  --k_shot 8 --n_way 5  \
+--train_bs 32 --eval_bs 32 --max_iter_for_eval 10 \
+--lr_meta 3e-3 --lr_task 0.6 &
+
+
+
+nohup python train_maml_cifar100.py \
+--gpu_id 1 \
+--max_meta_iter 50000  --k_shot 8 --n_way 5  \
+--train_bs 32 --eval_bs 32 --max_iter_for_eval 10 \
+--lr_meta 1e-3 --lr_task 0.1 &
+
+
+
+
+
+# --------------------------------------------------------------
+2022-01-13(R) -- evening
+# --------------------------------------------------------------
+nohup python train_maml_cifar100.py \
+--gpu_id 3 \
+--max_meta_iter 10000  --k_shot 4 --n_way 5  \
+--train_bs 16 --eval_bs 32 --max_iter_for_eval 10 \
+--lr_meta 1e-3 --lr_task 0.1 --use_averaged_meta_loss &
+
+nohup python train_maml_cifar100.py \
+--gpu_id 0 \
+--max_meta_iter 10000  --k_shot 4 --n_way 5  \
+--train_bs 16 --eval_bs 32 --max_iter_for_eval 10 \
+--lr_meta 3e-3 --lr_task 0.1  --use_averaged_meta_loss &
+
+nohup python train_maml_cifar100.py \
+--gpu_id 0 \
+--max_meta_iter 10000  --k_shot 4 --n_way 5  \
+--train_bs 16 --eval_bs 32 --max_iter_for_eval 10 \
+--lr_meta 3e-3 --lr_task 0.3 --use_averaged_meta_loss &
+
+
+nohup python train_maml_cifar100.py \
+--gpu_id 0 \
+--max_meta_iter 10000  --k_shot 4 --n_way 5  \
+--train_bs 32 --eval_bs 32 --max_iter_for_eval 10 \
+--lr_meta 3e-3 --lr_task 0.3  --use_averaged_meta_loss &
+
+
+
+nohup python train_maml_cifar100.py \
+--gpu_id 3 \
+--max_meta_iter 10000  --k_shot 4 --n_way 5  \
+--train_bs 32 --eval_bs 32 --max_iter_for_eval 10 \
+--lr_meta 1e-3 --lr_task 0.1 --use_averaged_meta_loss &
+
+
+nohup python train_maml_cifar100.py \
+--gpu_id 3 \
+--max_meta_iter 10000  --k_shot 4 --n_way 5  \
+--train_bs 32 --eval_bs 32 --max_iter_for_eval 10 \
+--lr_meta 3e-3 --lr_task 0.1  --use_averaged_meta_loss &
+
+
+nohup python train_maml_cifar100.py \
+--gpu_id 0 \
+--max_meta_iter 10000  --k_shot 4 --n_way 5  \
+--train_bs 32 --eval_bs 32 --max_iter_for_eval 10 \
+--lr_meta 3e-3 --lr_task 0.3  --use_averaged_meta_loss &
