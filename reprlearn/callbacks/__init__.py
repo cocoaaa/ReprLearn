@@ -1,1 +1,1 @@
-from .log_callbacks import Log2DiskCallback, Log2TBCallback
+from .log_callbacks import LogImage2DiskCallback, LogImage2TBCallback, LogScatterPlot2DiskCallback, LogScatterPlot2TBCallback
