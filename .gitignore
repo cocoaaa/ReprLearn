@@ -37,4 +37,4 @@ ipython_config.py
 
 # IDEs
 .idea
-
+.vscode
