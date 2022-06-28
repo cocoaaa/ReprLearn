@@ -199,19 +199,95 @@ nohup python train_gm.py --model_name conv_fc_gan  \
 --n_show 64 \
 --log_root /data/hayley-old/Tenanbaum2000/lightning_logs/"$(date +%F)" \
 2>&1 | tee log-"$(date +%F-%H:%M)".txt &
-.
-nohup python train.py --model_name="bivae" \
---latent_dim=10 --hidden_dims 32 64 128 256 --adv_dim 32 32 32 --adv_weight 15.0 \
---data_name="maptiles" \
---cities la paris \
---styles CartoVoyagerNoLabels StamenTonerBackground \
+
+# 11-30-2021
+# train on EsriImagery maptiles, all cities
+# on cropped 64x64 map tiles in /data/hayley-old/Maptiles-64x64-thresh:0.01
+# --latent_dim = 1028
+#--dec_hidden_dims 256 128 128 64 32
+nohup python train_gm.py --model_name conv_fc_gan  \
+--latent_dim 1028 --latent_emb_dim 4112 \
+--dec_type conv --dec_hidden_dims 256 128 128 64 32 \
+--data_name maptiles \
+--data_root  /data/hayley-old/Maptiles-64x64-thresh:0.01 \
+--cities 'la' 'charlotte' 'vegas' 'boston' 'paris' \
+     'amsterdam' 'shanghai' 'seoul' 'chicago' 'manhattan' \
+     'berlin' 'montreal' 'rome' \
+--styles EsriImagery \
 --zooms 14 \
---gpu_id=2 --max_epochs=400   --terminate_on_nan=True  \
--lr 3e-4 -bs 32 \
---log_root="/data/hayley-old/Tenanbaum2000/lightning_logs/2021-01-23/" &
+--gpu_id 1 --max_epochs 1000 --batch_size 128 \
+--lr_g 1e-4 --lr_d 1e-3 -k 1 \
+--b1 0.5 --b2 0.9 \
+--ckpt_metric "val/loss_G" \
+--save_top_k 5 \
+--no_early_stop \
+--n_show 64 \
+--log_root /data/hayley-old/Tenanbaum2000/lightning_logs/"$(date +%F)" \
+2>&1 | tee log-"$(date +%F-%H:%M)".txt &
+
+# even larger latent dim
+nohup python train_gm.py --model_name conv_fc_gan  \
+--latent_dim 2056 --latent_emb_dim 4112 \
+--dec_type conv --dec_hidden_dims 256 128 128 64 32 \
+--data_name maptiles \
+--data_root  /data/hayley-old/Maptiles-64x64-thresh:0.01 \
+--cities 'la' 'charlotte' 'vegas' 'boston' 'paris' \
+     'amsterdam' 'shanghai' 'seoul' 'chicago' 'manhattan' \
+     'berlin' 'montreal' 'rome' \
+--styles EsriImagery \
+--zooms 14 \
+--gpu_id 1 --max_epochs 1000 --batch_size 128 \
+--lr_g 1e-4 --lr_d 1e-3 -k 1 \
+--b1 0.5 --b2 0.9 \
+--ckpt_metric "val/loss_G" \
+--save_top_k 5 \
+--no_early_stop \
+--n_show 64 \
+--log_root /data/hayley-old/Tenanbaum2000/lightning_logs/"$(date +%F)" \
+2>&1 | tee log-"$(date +%F-%H:%M)".txt &
 
 
 
+#resnet decoder
+nohup python train_gm.py --model_name conv_fc_gan  \
+--latent_dim 1028 --latent_emb_dim 4112 \
+--dec_type resnet --dec_hidden_dims 256 128 128 64 32 \
+--data_name maptiles \
+--data_root  /data/hayley-old/Maptiles-64x64-thresh:0.01 \
+--cities 'la' 'charlotte' 'vegas' 'boston' 'paris' \
+     'amsterdam' 'shanghai' 'seoul' 'chicago' 'manhattan' \
+     'berlin' 'montreal' 'rome' \
+--styles EsriImagery \
+--zooms 14 \
+--gpu_id 1 --max_epochs 1000 --batch_size 128 \
+--lr_g 1e-4 --lr_d 1e-3 -k 1 \
+--b1 0.5 --b2 0.9 \
+--ckpt_metric "val/loss_G" \
+--save_top_k 5 \
+--no_early_stop \
+--n_show 64 \
+--log_root /data/hayley-old/Tenanbaum2000/lightning_logs/"$(date +%F)" \
+2>&1 | tee log-"$(date +%F-%H:%M)".txt &
+
+nohup python train_gm.py --model_name conv_fc_gan  \
+--latent_dim 2056 --latent_emb_dim 4112 \
+--dec_type resnet --dec_hidden_dims 256 128 128 64 32 \
+--data_name maptiles \
+--data_root  /data/hayley-old/Maptiles-64x64-thresh:0.01 \
+--cities 'la' 'charlotte' 'vegas' 'boston' 'paris' \
+     'amsterdam' 'shanghai' 'seoul' 'chicago' 'manhattan' \
+     'berlin' 'montreal' 'rome' \
+--styles EsriImagery \
+--zooms 14 \
+--gpu_id 1 --max_epochs 1000 --batch_size 128 \
+--lr_g 1e-4 --lr_d 1e-3 -k 1 \
+--b1 0.5 --b2 0.9 \
+--ckpt_metric "val/loss_G" \
+--save_top_k 5 \
+--no_early_stop \
+--n_show 64 \
+--log_root /data/hayley-old/Tenanbaum2000/lightning_logs/"$(date +%F)" \
+2>&1 | tee log-"$(date +%F-%H:%M)".txt &
 
 
 
