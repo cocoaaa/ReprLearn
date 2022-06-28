@@ -89,7 +89,7 @@ class FCGenerator(nn.Module):
             self.out_layer = nn.Sequential(
                 nn.Conv2d(self.in_channels, self.in_channels,
                           kernel_size=(last_k_h, last_k_w), stride=1, padding=1),
-                self.out_fn)
+                self.out_fn) #todo: why is this using conv2d layer and not fully-connect/linear layer?
 
         else:
             raise ValueError("Generator only supports output of 2 or 3-dim")
@@ -145,3 +145,39 @@ class FCGenerator(nn.Module):
                             help="Output function applied at the output layer of the decoding process. Default: tanh")
 
         return parser
+
+
+
+
+class VecDecoder(nn.Module):
+    """Fully-connected layers with input vector of size `z_dim` 
+    and output vector of size `target_dim`
+    """
+    def __init__(self, 
+                 input_dim: int, #z_dim
+                 nfs: List[int], # number of units in hidden units
+                 out_dim: int, #target_dim
+                 act_fn: Optional[Callable]=nn.LeakyReLU(),
+                 out_fn: Optional[Callable]=nn.Identity(),
+                ):
+        super().__init__()
+        self.input_dim = input_dim
+        self.out_dim = out_dim
+        
+        nfeats = [self.input_dim, *nfs]
+        layers =  [make_fc_block(in_, out_, act_fn=act_fn) \
+                  for (in_, out_) in zip(nfeats, nfeats[1:])]
+        last_layer = make_fc_block(nfeats[-1], self.out_dim, act_fn=out_fn)
+        self.decoder = nn.Sequential(
+            *layers,
+            last_layer
+        )
+        
+    def forward(self, z):
+        """  z --> y
+        input: z (code vector) 
+        output: y (target vector)
+        """
+        return self.decoder(z)
+    
+    
