@@ -68,8 +68,18 @@ def create_dset_of_classes(imgs: np.ndarray,
 
 
 class ImageFolderDataset(Dataset):
-    """ returns  (image, img_filename)
-    transform: optional[callable]: applied to the image if not None
+    """ Create dataset of images given the image folder 
+    Assumes data_dir has the structure of:
+        <data_dir>
+        | - xxx.png
+        | - xxy.png
+        | -...
+    Each datapoint is of a tuple of (image, img_filename)
+
+    Args:
+    ----
+    img_dir : (Path) path to the image folder
+    transform : (Optional[callable]) applied to the image if not None
 
     """
     def __init__(self, img_dir, transform=None):
@@ -93,12 +103,19 @@ class ImageFolderDataset(Dataset):
 
     def collect_all_timgs(self,
                       batch_size:int=64) -> torch.Tensor:
+        """Collect all images in the folder into a single tensor (n_imgs, nc, h, w).
+        
+        Returns:
+        -------
+        all_timgs : (Tensor) of shape (n_imgs, nc, h, w)
+        """
         dl = DataLoader(self, batch_size=batch_size)
         all_timgs = []
         for batch in dl:
             batch_imgs, batch_fns = batch
             all_timgs.append(batch_imgs)
         all_timgs = torch.stack(all_timgs, dim=0)
+
         return all_timgs
 
 
@@ -106,14 +123,10 @@ class ImageFolderDataset(Dataset):
                         batch_size: int,
                         out_fp: Path,
     ) -> Path:
-        """Assumes data_dir has the structure of:
-        <data_dir>
-        | - xxx.png
-        | - xxy.png
-        | -...
-        Returns
-        -------
-            path to the output pickled file of a torch.Tensor (n_imgs, nc, h, w)
+        """
+        Args
+        ----
+        out_fp : (Path) filepath to the output pickled file of a torch.Tensor (n_imgs, nc, h, w)
         """
         all_timgs = self.collect_timgs(batch_size)
         joblib.dump(all_timgs, out_fp)
