@@ -63,7 +63,7 @@ from reprlearn.data.datamodules import MNISTDataModule, MaptilesDataModule
 from reprlearn.callbacks.recon_logger import ReconLogger
 from reprlearn.callbacks.hist_logger import  HistogramLogger
 from reprlearn.callbacks.beta_scheduler import BetaScheduler
-from reprlearn.callbacks import DebugCallback
+from reprlearn.callbacks import LogImage2DiskCallback
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 
@@ -218,7 +218,7 @@ if __name__ == '__main__':
     logging.basicConfig(filename=log_fp,
                         filemode='w',
                         format='%(asctime)s -- %(message)s',
-                        datefmt="%m/%d/%Y %I:%M%S %p",
+                        datefmt="%m/%d/%Y %I:%M:%S %p",
                         level=logging.DEBUG)
     
     # Log initial experiment setup configs
@@ -245,7 +245,8 @@ if __name__ == '__main__':
     if not sample_dir.exists():
         sample_dir.mkdir(parents=True)
         logging.info(f"Sample dir: {sample_dir.absolute()} -- created.")
-    disk_logger = DebugCallback(
+
+    disk_logger = LogImage2DiskCallback(
         log_every = args.write_to_disk_every,
         num_samples = 64,
         save_dir=sample_dir
