@@ -74,7 +74,7 @@ class LogImage2DiskCallback(Callback):
 class LogScatterPlot2DiskCallback(Callback):
 
     def __init__(self, log_every: int, num_samples: int, save_dir: Path,
-                 xlim: Optional[Tuple[float, float]]=None,
+                 xlim: Optional[Tuple[float, float]]=None,  ylim:Tuple[float,float]=None,
                  **plot_kwargs) -> None:
         """ At every `log_every` epoch, use the current G to generate a
         `num_samples` number of datapts, and write the sample to disk (`save_dir`)
@@ -94,7 +94,21 @@ class LogScatterPlot2DiskCallback(Callback):
             save_dir.mkdir(parents=True)
             print(f"Created dir for samples: {save_dir}")
         self.xlim = xlim
+        self.ylim = ylim
         self.plot_kwargs = plot_kwargs
+
+
+    def setup(self, trainer, pl_module, stage: Optional[str] = None) -> None:
+    # def on_train_start(self, trainer, pl_module) -> None:
+
+        # set additional init. attributes for this callback
+        # fixed z-samples to feed to the generator
+        z_samples = torch.randn((self.num_samples, pl_module.latent_dim), device=pl_module.device)
+        self.sorted_zs, self.sorted_id = torch.sort(z_samples, dim=0)
+        self.cmap = plt.cm.get_cmap('jet', len(self.sorted_zs))
+
+        print("Logscatter2tb callback setup done: Set fixed zsample input")
+
 
     def on_train_start(self, trainer, pl_module) -> None:
         print("Train started")
@@ -144,20 +158,25 @@ class LogScatterPlot2DiskCallback(Callback):
                 # todo: this way of returning back to original module's training state can benefit from the context manager
                 was_training = pl_module.training
                 pl_module.eval()
-                x_gen = pl_module.sample(self.num_samples, pl_module.device)
+                x_gen = pl_module.generator(self.sorted_zs.to(pl_module.device)) #note: input z is sorted in increasing order
                 x_gen = x_gen.cpu().numpy()
                 pl_module.train(was_training)
                 #----
                 f, ax = plt.subplots()
-                ax.scatter(x_gen[:, 0], x_gen[:, 1], **self.plot_kwargs)
+                ax.scatter(x_gen[:,0], x_gen[:,1], 
+                        c=self.sorted_zs.cpu().numpy(),
+                        cmap=self.cmap,
+                        **self.plot_kwargs)
                 ax.set_title(f"x_gen (iter: {trainer.global_step})")
                 if self.xlim is not None:
                     ax.set_xlim(self.xlim)
+                if self.ylim is not None:
+                    ax.set_ylim(self.ylim)
 
                 fp = self.save_dir / f"x_gen_epoch={trainer.current_epoch}_gstep={trainer.global_step}.png"
                 f.savefig(fp)
                 print(f"Saved generated samples at {trainer.current_epoch}ep: {fp}") #todo: remove
-
+                plt.close(f)
 
 class LogImage2TBCallback(Callback):
 
@@ -215,28 +234,30 @@ class LogScatterPlot2TBCallback(Callback):
         print("Logscatter2tb callback setup done: Set fixed zsample input")
 
 
-    def on_epoch_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
+    def on_train_epoch_end(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
+        if (trainer.current_epoch + 1) % self.log_every == 0:
 
-        with torch.no_grad():
-            #----- todo: use context manager
-            was_training = pl_module.training
-            # print('*****') #debug
-            # print(f'on_epoch_end -- module.training: {was_training} <-- should be eval?')
-            pl_module.eval()
-            x_gen = pl_module.generator(self.sorted_zs) #note: input z is sorted in increasing order
-            x_gen = x_gen.cpu().numpy()
+            with torch.no_grad():
+                #----- todo: use context manager
+                was_training = pl_module.training
+                # print('*****') #debug
+                # print(f'on_epoch_end -- module.training: {was_training} <-- should be eval?')
+                pl_module.eval()
+                x_gen = pl_module.generator(self.sorted_zs.to(pl_module.device)) #note: input z is sorted in increasing order
+                x_gen = x_gen.cpu().numpy()
 
-            pl_module.train(was_training)
-            # ----- end: wrapped by context manager
+                pl_module.train(was_training)
+                # ----- end: wrapped by context manager
 
-            f, ax = plt.subplots()
-            ax.scatter(x_gen[:,0], x_gen[:,1], 
-                    c=self.sorted_zs.cpu().numpy(),
-                    cmap=self.cmap,
-                    **self.plot_kwargs)
-            ax.set_title(f"x_gen (iter: {trainer.global_step})")
-            if self.xlim is not None:
-                ax.set_xlim(self.xlim)
-            if self.ylim is not None:
-                ax.set_ylim(self.ylim)
-            trainer.logger.experiment.add_figure(f"x_gen", f, trainer.global_step)
+                f, ax = plt.subplots()
+                ax.scatter(x_gen[:,0], x_gen[:,1], 
+                        c=self.sorted_zs.cpu().numpy(),
+                        cmap=self.cmap,
+                        **self.plot_kwargs)
+                ax.set_title(f"x_gen (iter: {trainer.global_step})")
+                if self.xlim is not None:
+                    ax.set_xlim(self.xlim)
+                if self.ylim is not None:
+                    ax.set_ylim(self.ylim)
+                trainer.logger.experiment.add_figure(f"x_gen", f, trainer.global_step)
+                plt.close(f)
