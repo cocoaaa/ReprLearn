@@ -3,7 +3,7 @@ from copy import deepcopy
 from argparse import ArgumentParser
 import numpy as np
 import torch
-from torch import nn, optim
+from torch import Tensor, nn, optim
 import torchvision
 from pytorch_lightning.core.lightning import LightningModule
 from reprlearn.models.utils import inplace_freeze, inplace_unfreeze
@@ -32,12 +32,24 @@ class GAN(LightningModule):
     ):
         super().__init__()
         self.dims = in_shape
-        self.in_channels, self.in_h, self.in_w = in_shape
+        # self.in_channels, self.in_h, self.in_w = in_shape
+        self.data_dim = len(in_shape)
+
+        if self.data_dim == 2:
+            self.in_h, self.in_w = in_shape
+            self.out_dim = in_shape[-1]
+
+        elif self.data_dim >= 3 :
+            self.in_channels, self.in_h, self.in_w  = in_shape
+            self.out_dim = self.in_channels
+        else:
+            raise ValueError("Currently, this generator supports data_dim of 2 or 3")
+
         self.latent_dim = latent_dim
         self.lr_g = lr_g
         self.lr_d = lr_d
         self.niter_D_per_G = niter_D_per_G # "k" in Goodfellow2014, ie. update D k-times given G; then given the udpated D, update G once
-        #         self.label_map = label_map or {"real": 1, "gen": 0}
+        # self.label_map = label_map or {"real": 1, "gen": 0}
         self.size_average = size_average
         self.generator = generator
         self.discr = discriminator
@@ -45,8 +57,8 @@ class GAN(LightningModule):
         # Optimizers: take care of them manually
         # self.automatic_optimization = False
         # see: https://github.com/PyTorchLightning/pytorch-lightning/issues/5108#issuecomment-768252625
-        self.b1 = kwargs.get('b1', None) or 0.0 #.99 #todo: find good values
-        self.b2 = kwargs.get('b2', None) or 0.99
+        self.b1 = kwargs.get('b1', None) or 0.5 #todo: find good values
+        self.b2 = kwargs.get('b2', None) or 0.9
 
         self.n_show = n_show
         self.log_every = log_every
@@ -108,7 +120,7 @@ class GAN(LightningModule):
     def adversarial_loss(self, score: Tensor, is_real: bool):
         return self.discr.compute_loss(score, is_real)
 
-    def sample(self, num_samples: int, current_device, **kwargs) -> Tensor:
+    def sample(self, num_samples: int, current_device, return_z: bool=False) -> Tensor:
         """Samples from the latent space and return samples from approximate data space:
         z ---> mu of P_x|z
         with in no_grad() context manager.
@@ -117,10 +129,12 @@ class GAN(LightningModule):
         num_samples: (Int) Number of samples
         current_device: (Int) Device to run the model; it must be same as
             where model weight tensors are located (ie. self.device)
+        return_z : (bool) True to return the noise variables too
 
         Returns
         -------
         samples : batch of reconstructions from sampled latent codes
+        or (z,samples) : if return_z is True; z[i] matches with samples[i] = x[i] = G(z[i])
         """
         with torch.no_grad():
             was_training = self.training # todo: make a context manager to handle this state putting back procedure
@@ -128,7 +142,11 @@ class GAN(LightningModule):
             z = torch.randn((num_samples, self.latent_dim), device=current_device)  # z = z.type_as(?)
             samples = self.generator(z)
             self.train(was_training)
-            return samples
+
+            if return_z:
+                return z, samples
+            else:
+                return samples
 
     def sample_train_batch(self) -> [Tensor, Tensor]:
         """Return a random batch from the training dataloader
@@ -167,7 +185,10 @@ class GAN(LightningModule):
         # print('Debug: push_through_D_and_G...')
         # assert is_frozen(self.generator), 'G must be frozen!' #todo: remove
         # assert is_frozen(self.discr), 'D must be frozen!'  #todo: remove
-        x_real = batch['x']
+        try:
+            x_real = batch['x']
+        except TypeError:
+            x_real = batch[0]
         bs = len(x_real)
 
         ######################
@@ -224,7 +245,10 @@ class GAN(LightningModule):
         ----
         batch : (Dict[str,Any]) a batch returned by a dataloader
         """
-        x_real = batch['x']
+        try:
+            x_real = batch['x']
+        except TypeError:
+            x_real = batch[0]
         bs = len(x_real)
         # opt_g, opt_d = self.optimizers(use_pl_optimizer=False)
         opt_g, opt_d = self.optimizers()
