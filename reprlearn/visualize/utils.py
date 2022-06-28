@@ -97,6 +97,11 @@ def get_fig(n_total: int, nrows: int=None, factor=3.0) -> Tuple[plt.Figure, plt.
     return f, axes
 
 
+def set_plot_lims(ax: plt.Axes, xlim: Tuple[float,float], ylim: Tuple[float, float]):
+    ax.set_xlim(xmin=xlim[0], xmax=xlim[1])
+    ax.set_ylim(ymin=ylim[0], ymax=ylim[1])
+    return ax
+
 def show_npimgs(npimgs: Iterable[np.ndarray], *,
                 titles: Iterable[Union[str, int]]=None,
                 nrows: int=None,
