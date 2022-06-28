@@ -1,5 +1,6 @@
 import io
 import math
+from pathlib import Path
 from typing import Tuple, Iterable, Optional, Union
 import numpy as np
 import matplotlib.pyplot as plt
@@ -54,6 +55,19 @@ def show_npimgs(npimgs: Iterable[np.ndarray], *,
     if title is not None:
         f.suptitle(title)
     return f, axes
+
+def save_each_npimg(npimgs: Union[Iterable[np.ndarray], np.ndarray],
+                   out_dir: Path,
+                    prefix: Union[str, int]='',
+                   suffix_start_idx: int=0) -> None:
+    
+    bs = len(npimgs)
+    for i in range(bs):
+        idx = suffix_start_idx + i
+        fp = out_dir / f'{prefix}_{idx}.png'
+        plt.imsave(fp, npimgs[i])
+#         print('saved: ', fp)
+    
 
 def plt_figure_to_np(fig, dpi=30):
     io_buf = io.BytesIO()

@@ -1,7 +1,9 @@
 import inspect
 from datetime import datetime
 import math
+from functools import partial
 import numpy as np
+from PIL import Image
 import matplotlib.pyplot as plt
 import scipy as sp
 from skimage.color import rgb2gray
@@ -51,23 +53,6 @@ def mkdir(p: Path, parents=True):
     if not p.exists():
         p.mkdir(parents=parents)
         print("Created: ", p)
-
-
-def change_suffix(fp: Path, new_suffix: str) -> Path:
-    """Change the suffix of input filepath (fp) with new_suffix.
-    Returns a new Path object.
-
-    Args
-    ----
-    fp : original filepath as Path object
-    new_suffix : str; handles the case '.' is not prepended.
-        e.g.: '.png', '.config'
-    """
-    if not new_suffix.startswith('.'):
-        new_suffix = '.' + new_suffix
-    s = fp.suffix
-    new_fp = str(fp)[:-len(s)]
-    return Path(new_fp + new_suffix)
 
 
 def get_next_version(save_dir:Union[Path,str], name:str):
@@ -172,3 +157,43 @@ def npimgs2timgs(npimgs: np.ndarray):
 def timgs2npimg2(timgs: torch.Tensor):
     return timgs.detach().numpy().transpose(0, -2, -1, -3)
 
+
+# ops on Path dir
+def has_img_suffix(fp: Path, valid_suffixes:List[str]=['.png', '.jpeg', '.jpg']):
+    return fp.suffix.lower() in valid_suffixes
+
+
+def count_imgs(dir_path: Path, valid_suffixes:List[str]=['.png', '.jpeg', '.jpg']) -> int:
+    """ Count the number of images in the directory """
+    c = 0
+    for img_fp in dir_path.iterdir():
+        if img_fp.is_file() and has_img_suffix(img_fp, valid_suffixes):
+            c += 1
+    return c
+
+def get_first_img_info(img_dir: Path) -> np.ndarray:
+    
+    for img_fp in img_dir.iterdir():
+        if img_fp.is_file():
+            suffix = img_fp.suffix
+            npimg = np.array(Image.open(img_fp))
+            print(f'{img_dir.stem}: {npimg.shape}, {suffix}')
+            return npimg
+        
+def get_ith_npimg(img_dir: Path, ind: int, show:bool=True) -> np.ndarray:
+    i = 0
+    for img_fp in img_dir.iterdir():
+        if img_fp.is_file() and has_img_suffix(img_fp):
+            if i == ind:
+#                 print('found')
+                pil_img = Image.open(img_fp)
+                npimg = np.array(pil_img)
+                if show:
+                    plt.title(i)
+                    plt.imshow(npimg)
+                    plt.axis('off')
+                return npimg
+            else: 
+                i += 1
+                    
+get_first_npimg = partial(get_ith_npimg, ind=0)
