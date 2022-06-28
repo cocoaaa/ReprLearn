@@ -161,7 +161,7 @@ def conv_block(
 def conv_blocks(
         in_channels: int,
         nf_list: List[int],
-        has_bn=True,
+        has_bn: bool=True,
         act_fn: Optional[Callable]=None,
         **kwargs) -> nn.Sequential:
     """
