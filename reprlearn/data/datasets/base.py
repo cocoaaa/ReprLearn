@@ -98,7 +98,8 @@ class ImageFolderDataset(Dataset):
 
         if self.transform is not None:
             img = self.transform(img)
-        return img, self.img_fps[idx].name
+        return img #, self.img_fps[idx].name #2022-07-24
+ 
 
 
     def collect_all_timgs(self,

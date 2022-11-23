@@ -1,40 +1,66 @@
 import os
-from typing import Dict, Any, Iterable, Tuple
-from torchvision.datasets import MNIST
+from pathlib import Path
+from typing import Dict, Any, Iterable, Tuple, Optional
+from xml.dom.pulldom import default_bufsize
+from torch.utils.data import Dataset, DataLoader
+from torchvision import transforms
+from reprlearn.data.datasets.base import ImageFolderDataset
+"""
+2022-07-24: wip 
+- Look at datasets.base.ImageFolderDataset for dataset class for training gms on celeba
+"""
 
-class MNISTDataset(MNIST):
-    """Override __getitem__ to return a dictionary rather than the tuple
+def get_my_celeba64_dataset(
+    img_dir: Optional[Path]=None,
+    center_crop_size: int=140,
+    resize: int=64):
+    """Get a dataset for CelebA64 with the transform of with the given center_crop size
+    and the target image size after the transforms applied.
+    img_dir is set to either:
+        - Path to the image dir of the original celebA (`img_aligned`) folder
+        if `is_preprocessed` is True.
+        - or, the image dir which contains iamges already preprocessed with 
+        the center-crop 140 and resize to 64.
+
+    Args:
+    -----
+    - center_crop_size: int
+        Size of the center cropped image
+    - resize: int
+        size of the iamge after the whole xform of (center-crop and resizing)
+
+    Note:
+    -----
+    As of 2022-07-24 I'm using it to train the following models:
+    - prog-gan
+    
+    I think I have also used the same preprocessing for training the GAN suites,
+    implemented by LynnHo.
+    Also probably the beta-vae, and dfc-vae? #to-verify
     """
-    @property
-    def raw_folder(self) -> str:
-        return os.path.join(self.root, 'MNIST', 'raw')
 
-    @property
-    def processed_folder(self) -> str:
-        return os.path.join(self.root, 'MNIST', 'processed')
+    img_dir = img_dir or Path('/data/datasets/reverse-eng-data/originals/CelebA/img_align_celeba')
+    xform = transforms.Compose([
+    transforms.CenterCrop(center_crop_size),
+    transforms.Resize((resize, resize)),
+    transforms.ToTensor(),
+    ])
 
-    @property
-    def name(self) -> str:
-        mode = "Train" if self.train else "Test"
-        return f"MNIST-{mode}"
+    return ImageFolderDataset(img_dir=img_dir, transform=xform)
 
-    def __getitem__(self, index: int) -> Dict[str, Any]:
-        """
-        Args:
-            index (int): Index
 
-        Returns:
-            dict: {'x': image} for unsupervised dataset
-                or {'x': image, 'y': label} for classification type supervised dataset,
-                or {'x': image, 'y': content_label, 'd': style/domain_label for dataset from multi-sources/styles/domains
-        """
-        img, target = super().__getitem__(index)
-        return {'x': img, 'y': target}
-
-    @classmethod
-    def unpack(cls, batch: Dict[str,Any]) -> Tuple[Any,Any]:
-        # todo: consider if this is a good design
-        # - if batch is a single sample from MNIST Dataset (rather than a batch from
-        # MNISTDataModule's any dataloaders, e.g., ) the output of this method
-        # is a single image, and a single label (ie. no batch dimension)
-        return batch['x'], batch['y']
+def get_my_celeba64_dataloader(
+    *,
+    img_dir: Optional[Path]=None,
+    center_crop_size: int=140,
+    resize: int=64,
+    **kwargs,
+):
+    dl_kwargs = {
+        'shuffle': True,
+        'drop_last': True,
+        'pin_memory': True
+    }
+    dl_kwargs.update(kwargs)
+    dset = get_my_celeba64_dataset(img_dir, center_crop_size, resize)
+    return DataLoader(dset, **dl_kwargs)

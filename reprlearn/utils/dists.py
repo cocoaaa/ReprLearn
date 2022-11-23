@@ -1,4 +1,5 @@
 import torch
+
 def kld_std(mu1: torch.Tensor, cov1: torch.Tensor, reduction: str = 'mean') -> torch.Tensor:
     """Assume mu1 and cov1 are mini-batch of multi-dimen vectors.
     - mu1 (torch.tensor): shape is (bs, dim_z)
@@ -24,3 +25,14 @@ def kld_std(mu1: torch.Tensor, cov1: torch.Tensor, reduction: str = 'mean') -> t
         return batch_klds.sum()
 
     # vs.         kld = torch.mean(0.5 * torch.sum(1 + log_var - mu ** 2 - log_var.exp(), dim = 1), dim = 0)
+
+
+
+def squared_l2_dist(x: torch.Tensor,y:torch.Tensor) -> float:
+    # assert x.shape == y.shape, 'x and y should be the vectors of the same dim.'
+    
+    # for debug
+    # if x.shape != y.shape:
+    #     breakpoint()
+    
+    return torch.sum( (x-y).pow(2) )

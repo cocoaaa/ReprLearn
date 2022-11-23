@@ -38,3 +38,6 @@ ipython_config.py
 # IDEs
 .idea
 .vscode
+
+# MACOS
+*.DS_Store

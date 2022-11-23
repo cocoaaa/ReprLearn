@@ -1,7 +1,9 @@
 import inspect
 from datetime import datetime
 import math
+from collections import defaultdict
 from functools import partial
+from re import I
 import numpy as np
 from PIL import Image
 import matplotlib.pyplot as plt
@@ -12,6 +14,8 @@ from skimage.transform import resize
 from pprint import pprint
 import torch
 from torch.utils.data import DataLoader
+import torchvision as tv
+from torchvision.transforms import ToTensor
 from pathlib import Path
 from typing import List, Set, Dict, Tuple, Optional, Iterable, Mapping, Union, Callable
 import warnings
@@ -135,6 +139,14 @@ def n_iter_per_epoch(dl:DataLoader):
     else:
         return math.ceil(n_iter)
 
+
+
+# image read io
+def read_image_as_tensor(img_fp: Path):
+    # todo: test this function
+    return ToTensor()(Image.open(img_fp))
+
+
 # npimg <--> torch image conversion
 # https://www.programmersought.com/article/58724642452/
 
@@ -157,10 +169,19 @@ def npimgs2timgs(npimgs: np.ndarray):
 def timgs2npimg2(timgs: torch.Tensor):
     return timgs.detach().numpy().transpose(0, -2, -1, -3)
 
+# ops on path
+def mkdirp(dirpath:Path):
+    if not dirpath.exists():
+        dirpath.mkdir(parents=True)
+        print(f'{dirpath} created')
 
-# ops on Path dir
+
+# ops on image dir
 def has_img_suffix(fp: Path, valid_suffixes:List[str]=['.png', '.jpeg', '.jpg']):
     return fp.suffix.lower() in valid_suffixes
+
+def is_img_fp(fp:Path, valid_suffixes:List[str]=['.png', '.jpeg', '.jpg']):
+    return fp.is_file() and has_img_suffix(fp, valid_suffixes)
 
 
 def count_imgs(dir_path: Path, valid_suffixes:List[str]=['.png', '.jpeg', '.jpg']) -> int:
@@ -171,6 +192,31 @@ def count_imgs(dir_path: Path, valid_suffixes:List[str]=['.png', '.jpeg', '.jpg'
             c += 1
     return c
 
+def info_img_dir(img_dir: Path) -> Dict:
+    """Get basic stat of the img_dir:
+    
+    Returns a dict. of (k,v):
+    - "n_imgs": Int[number of images]
+    - "img_sizes": Dict[ImageSize, Int[count of imgs of that size]]
+        - ImageSize=Tuple[int]
+    """
+    d_stat = dict() # global container
+    d_sizes = defaultdict(int)  # contains nimgs per each size
+    n_imgs = 0 # total count of images
+    for img_fp in img_dir.iterdir():
+        if not (img_fp.is_file() and has_img_suffix(img_fp)):
+            continue
+        npimg = np.array(Image.open(img_fp))
+        img_size = npimg.shape #tuple
+        d_sizes[img_size] += 1
+
+        n_imgs += 1
+
+    d_stat['n_imgs'] = n_imgs
+    d_stat['img_sizes'] = d_sizes
+
+    return d_stat
+
 def get_first_img_info(img_dir: Path) -> np.ndarray:
     
     for img_fp in img_dir.iterdir():
@@ -180,20 +226,103 @@ def get_first_img_info(img_dir: Path) -> np.ndarray:
             print(f'{img_dir.stem}: {npimg.shape}, {suffix}')
             return npimg
         
-def get_ith_npimg(img_dir: Path, ind: int, show:bool=True) -> np.ndarray:
+def get_ith_img_fp(img_dir: Path, ind: int) -> Path:
+    """Return filepath to the ith image in the ascending sorted order in `img_dir`
+    Note :
+    - `ind` is zero-based index.
+    - If `ind` is larger than the last index in `img_dir`, filepath to the last 
+    image is returned.
+
+    
+    """
     i = 0
-    for img_fp in img_dir.iterdir():
-        if img_fp.is_file() and has_img_suffix(img_fp):
-            if i == ind:
-#                 print('found')
-                pil_img = Image.open(img_fp)
-                npimg = np.array(pil_img)
-                if show:
-                    plt.title(i)
-                    plt.imshow(npimg)
-                    plt.axis('off')
-                return npimg
-            else: 
-                i += 1
+    img_fps = sorted(
+        [img_fp for img_fp in img_dir.iterdir()
+        if img_fp.is_file() and has_img_suffix(img_fp)]
+        )
+    if ind >= len(img_fps):
+        ind = - 1 # if ind is out of bound, return the last element in the list of img paths
+    return img_fps[ind]
+
+    
                     
+def get_ith_npimg(img_dir: Path, ind: int, show:bool=True) -> np.ndarray:
+    img_fp = get_ith_img_fp(img_dir, ind)
+    pil_img = Image.open(img_fp)
+    npimg = np.array(pil_img)
+    if show:
+        plt.title(ind)
+        plt.imshow(npimg)
+        plt.axis('off')
+    return npimg
+
+get_first_img_fp = partial(get_ith_img_fp, ind=0)
 get_first_npimg = partial(get_ith_npimg, ind=0)
+get_last_img_fp = partial(get_ith_img_fp, ind=-1)
+get_last_npimg = partial(get_ith_npimg, ind=-1)
+
+def get_last_modified_file(dirpath: Path) -> Tuple[Path,str]:
+    """Get the path to the file last modified in the dirpath, with the timestamp
+    Src: https://realpython.com/python-pathlib/
+    """    
+    from datetime import datetime
+    fp, ts = max((p.stat().st_mtime, p) for p in dirpath.iteridr())
+    return (fp, datetime.fromtimestamp(ts))
+
+
+def make_thumbnail(sample_dir: Path, 
+                   out_dir: Path=None, 
+                   fn_suffix: str='',
+                   n_show: int=64, 
+                   n_rows: int=8,
+                  ) -> None:
+    """Randomly select `n_show` number of images from `sample_dir` and create a
+    collage (.png).
+    Used to generate thumbnail for synthetic images of our GM dataset, created for 
+    NeurIPS22.
+    
+    
+    Naming pattern for generated thumbnail png:
+    ===============
+    thumb-{model_name}-fn_suffix.png
+    
+    Args:
+    ===============
+    - fn_suffix: suffix of the filename 
+        If not specified, use current timestamp
+    
+    Assumption:
+    ================
+    - `sample_dir`'s parent folder indicates the name of the model so that:
+        - <model_dir>
+            |- <sample_dir_stem>
+            |- thumb: this will be created if not existing. This is the folder to save the thumbnail image.
+                |- thumb-{model_name}-v{version}.png : this is the image file of thumbnail this function creates. 
+    -  there are more than 128k images #todo: fix it
+    
+    """
+    def to_tensor(pil_img)->torch.Tensor:
+        return tv.transforms.ToTensor()(pil_img)   
+
+    model_name = sample_dir.parent.name
+    if out_dir is None:
+        out_dir = sample_dir.parent/'thumbs'
+    out_dir.mkdir(parents=True, exist_ok=True)
+    
+    
+    timgs = []
+    for i, img_fp in enumerate(sample_dir.iterdir()):
+        if i == n_show: 
+            break
+        img = Image.open(img_fp)
+        timg = to_tensor(img)
+        timgs.append(timg)
+    # make into one figure/collage
+    
+    
+    # save the thumbnail/collage
+    fn_suffix = fn_suffix or now2str()
+    out_fp = f'{out_dir}/thumb-{model_name}-{fn_suffix}.png'
+    tv.utils.save_image(timgs, out_fp)
+    print("Saved thumbnail to: ", out_fp)
+    

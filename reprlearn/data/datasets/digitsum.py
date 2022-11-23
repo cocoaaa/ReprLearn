@@ -7,6 +7,10 @@ from torch.utils.data import Dataset, DataLoader
 from torch import Tensor
 from torchvision.datasets import VisionDataset
 
+#debug
+from IPython.core.debugger import set_trace as breakpoint
+
+
 class DigitSumDataset(VisionDataset):
     """Each datapoint is a Tuple[List[image], int]],
     where the target variable is the sum of the digits in the List of images.
@@ -109,8 +113,13 @@ class DigitSumDataset(VisionDataset):
             # print('set_x shape after transform: ', set_x.shape)                    
         
         # target variable  (sum of the elements in set_x)                     
-        set_y = self.data_y[dpt_inds]
-        y = set_y.sum(dtype=self.target_dtype).reshape((1,1)) #torch.float32
+        set_y = self.data_y[dpt_inds].to(self.target_dtype) #torch.float32
+        set_y = torch.unsqueeze(set_y, dim=-1) # append one extra dim to the end
+        y = set_y.sum(dim=0) #torch.float32
+        # y = set_y.sum(dtype=self.target_dtype).reshape((1,1)) 
+        # breakpoint()
+        # print('set_y shape: ', set_y.shape)
+        # print('y shape: ', y.shape)
         if self.target_transform is not None:
             y = self.target_transform(y)
         
