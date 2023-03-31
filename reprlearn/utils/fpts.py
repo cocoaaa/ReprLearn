@@ -149,20 +149,20 @@ def compute_artifacts_in(
 
 def compute_artifacts(
     fake_img_dir: Path,
-    real_img_dir: Path,
+    manifold_dir: Path,
     out_dir: Path,
     metric: Optional[Callable]=None,
-    n_datapts: Optional[int]=None,
+    size_manifold: Optional[int]=None,
     show_trioplot: bool=False,
     transforms: Optional[Callable]=None,
 ) -> torch.Tensor:
     """Compute artifacts of each image in fake_img_dir and save to out_dir"""
     
-    n_datapts = n_datapts or np.inf # to use all images in  real_img_dir
+    size_manifold = size_manifold or np.inf # to use all images in manifold_dir
     
     # reference manifold
-    manifold =[read_image_as_tensor(fp) for i, fp in enumerate(real_img_dir.iterdir())
-        if i < n_datapts and is_img_fp(fp)]
+    manifold =[read_image_as_tensor(fp) for i, fp in enumerate(manifold_dir.iterdir())
+        if i < size_manifold and is_img_fp(fp)]
     
     # compute artifacts
     for i, fp in enumerate(fake_img_dir.iterdir()):
@@ -181,12 +181,12 @@ def compute_artifacts(
         save_tanhtimgs_as_png(torch.stack([art]), out_dir=out_dir, start_index=out_stem)
     
         # show x_g, x_p, art
-        if show_trioplot:
+        if show_trioplot and i == 0:
             x_p, _ = estimate_projection(x_g, manifold, metric)
             show_timgs([x_g, x_p, art], titles=['x_g', 'x_p', 'artifact'],
                     title=fp.stem, nrows=1)
             
-    print('Done computing artifacts for: ', fake_img_dir) 
+    # print('Done computing artifacts for: ', fake_img_dir) 
                              
 
 # def estimate_projection_v1(x_g:torch.Tensor, img_dir:Path, d_x: Callable) -> Tuple[torch.Tensor, float]:
