@@ -21,9 +21,9 @@ from typing import List, Set, Dict, Tuple, Optional, Iterable, Mapping, Union, C
 import warnings
 
 
-def now2str():
+def now2str(delimiter: Optional[str]='-'):
     now = datetime.now()
-    now_str = now.strftime("%Y%m%d-%H%M%S")
+    now_str = now.strftime(f"%Y%m%d{delimiter}%H%M%S")
     return now_str
 
 
@@ -52,11 +52,6 @@ def info(arr, header=None):
     print("dtype: ", arr.dtype)
     print("min, max: ", min(np.ravel(arr)), max(np.ravel(arr)))
 
-
-def mkdir(p: Path, parents=True):
-    if not p.exists():
-        p.mkdir(parents=parents)
-        print("Created: ", p)
 
 
 def get_next_version(save_dir:Union[Path,str], name:str):
@@ -142,46 +137,115 @@ def n_iter_per_epoch(dl:DataLoader):
 
 
 # image read io
-def read_image_as_tensor(img_fp: Path):
+def read_image_as_tensor(img_fp: Path) -> torch.Tensor:
     # todo: test this function
     return ToTensor()(Image.open(img_fp))
 
 
+# ===
+# === tensor, npimg, pil_img conversions
+# ===
 # npimg <--> torch image conversion
 # https://www.programmersought.com/article/58724642452/
 
-
-def npimg2timg(npimg: np.ndarray):
+def npimg2timg(npimg: np.ndarray) -> torch.Tensor:
     if npimg.dtype == np.uint8:
         npimg = npimg / 255.0
 
     return torch.from_numpy(npimg.transpose((2,0,1)))
 
 
-def timg2npimg(timg: torch.Tensor):
+def timg2npimg(timg: torch.Tensor) -> np.ndarray:
     return timg.detach().numpy().squeeze().transpose((1,2,0))
 
+def timg2pil(timg: torch.Tensor) -> Image:
+    return tv.transforms.ToPILImage()(timg)
 
-def npimgs2timgs(npimgs: np.ndarray):
+
+def npimgs2timgs(npimgs: np.ndarray) -> torch.Tensor:
     return torch.from_numpy((npimgs.transpose((0,-1, 1, 2))))
 
 
-def timgs2npimg2(timgs: torch.Tensor):
+def timgs2npimg2(timgs: torch.Tensor) -> np.ndarray:
+    """ Converts a batch of tensor images (size is (bs, nC, h, w))
+    to an nparray of npimgs (size is (bs, h, w, nC).
+    
+    Note: If the tensor is in gpu, it will be detached and 
+    then converted to numpy.
+    Note: we return the numpy image array in the same device as the input tensor.
+    
+    
+    """
     return timgs.detach().numpy().transpose(0, -2, -1, -3)
 
-# ops on path
-def mkdirp(dirpath:Path):
-    if not dirpath.exists():
-        dirpath.mkdir(parents=True)
-        print(f'{dirpath} created')
+
+# ===
+# === Array indexing conversion
+# ===
+# Helper: i -> (r_idx, c_idx) for given span
+
+def get_qr(x:int, divider:int) -> Tuple[int, int]:
+    """ Get quotient and remainder when dividing x by divier
+    i = span * r_idx + c_idx
+    
+    c_idx = i % span
+    r_idx = (i - c_idx) / span
+    
+    Usage: 
+    -------
+    Convert index in 1-dim array to 2-dim array of size (nrows, ncols=span), i.e.,
+    i -> (r_idx, c_idx) for given span
+    
+    Similar: 
+    --------
+    np.divmod return (x // mod, x % mod)
+    """
+    r = x % divider
+    q = ( x - r ) / divider
+    
+    return int(q), int(r)
+
+# ===
+# === ops on path 
+# ===
+def mkdir(p: Path, parents=True):
+    if not p.exists():
+        p.mkdir(parents=parents)
+        print("Created: ", p)
+
+       
+        
+def search_and_move_file(src_dir: Path, search_word: str, out_dir: Path) -> int:
+    """ Search any file whose name contains `search_word` in the `src_dir`,
+    and move it to `out_dir`
+    
+    Returns
+    -------
+    int : number of files moved
+    """
+    n_moved = 0
+    for img_fp in src_dir.iterdir():
+        if search_word in str(img_fp):
+            fn = img_fp.name # <filename>.<ext>, e.g.: `mydog001.jpg`
+            
+            # move this file to out_dir folder
+            new_fp = img_fp.rename(out_dir/fn)
+            print(f'Renamed: {img_fp.absolute()} --> {new_fp.absolute()}')
+            n_moved += 1
+    return n_moved
 
 
-# ops on image dir
+# === ops on image dir
 def has_img_suffix(fp: Path, valid_suffixes:List[str]=['.png', '.jpeg', '.jpg']):
     return fp.suffix.lower() in valid_suffixes
 
 def is_img_fp(fp:Path, valid_suffixes:List[str]=['.png', '.jpeg', '.jpg']):
     return fp.is_file() and has_img_suffix(fp, valid_suffixes)
+
+def is_valid_dir(fp: Union[Path,str]) -> bool:
+    if isinstance(fp, Path):
+        fp = str(fp) 
+    return not (fp.startswith('.') and Path(fp).is_file())
 
 
 def count_imgs(dir_path: Path, valid_suffixes:List[str]=['.png', '.jpeg', '.jpg']) -> int:
@@ -191,6 +255,58 @@ def count_imgs(dir_path: Path, valid_suffixes:List[str]=['.png', '.jpeg', '.jpg'
         if img_fp.is_file() and has_img_suffix(img_fp, valid_suffixes):
             c += 1
     return c
+
+
+def count_files(dir_path: Path, 
+                is_valid_fp: Optional[Callable[[Path],bool]]=None) -> int:
+    """ Count the number of files in the directory that satisfies 
+    the given validity condition 
+    
+    """
+    c = 0
+    for fp in dir_path.iterdir():
+        if not fp.is_file():
+            continue
+        if is_valid_fp is not None and not is_valid_fp(fp):
+            continue
+        c += 1
+    return c
+
+def count_files_in_subdirs(
+    root_dir: Path,
+    is_valid_fp: Optional[Callable[[Path],bool]]=None,
+    verbose: Optional[bool]=True) -> Dict[str,int]:
+    """
+    Count files in each subdir that satisfies the validity condition.
+    
+    Returns:
+    -------
+    counts (Dict[subdir_name, count_of_valid files])
+    
+    """
+    counts = dict()
+    for sub_dir in root_dir.iterdir():
+        if not is_valid_dir(sub_dir):
+            continue
+        dirname = sub_dir.name
+        n_files =  count_files(sub_dir, is_valid_fp=is_valid_fp)
+        counts[dirname] = n_files
+        
+        if verbose:
+            print(f"{dirname}:  {n_files} num. of npy files")
+    if verbose:
+        print('Done!')
+    return counts
+    
+
+count_imgs_in_subdirs = partial(
+    count_files_in_subdirs, is_valid_fp=is_img_fp
+)
+
+count_npys_in_subdirs = partial(
+    count_files_in_subdirs, is_valid_fp=lambda fp:  fp.suffix == '.npy' 
+)
+    
 
 def info_img_dir(img_dir: Path) -> Dict:
     """Get basic stat of the img_dir:
