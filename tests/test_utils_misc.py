@@ -1,21 +1,23 @@
 from pathlib import Path
-from reprlearn.utils.misc import change_suffix, get_ith_img_fp, get_ith_npimg
+# from reprlearn.utils.misc import change_suffix
+from reprlearn.utils.misc import get_ith_img_fp, get_ith_npimg
 from reprlearn.utils.misc import get_next_version, get_next_version_path 
-from reprlearn.utils.misc import info_img_dir
+from reprlearn.utils.misc import info_img_dir, is_img_fp, count_files, is_valid_dir
+from reprlearn.utils.misc import get_qr
 
-def run_test_change_suffix(fp):
-    print(f'old: {fp}')
-    print(f"new: {change_suffix(fp, 'txt')}")
-
-
-def test_change_suffix1():
-    fp = Path('/data/hayley/temp.text')
-    run_test_change_suffix(fp)
+# def run_test_change_suffix(fp):
+#     print(f'old: {fp}')
+#     print(f"new: {change_suffix(fp, 'txt')}")
 
 
-def test_change_suffix2():
-    fp = Path('/data/hayley/image.pngng')
-    run_test_change_suffix(fp)
+# def test_change_suffix1():
+#     fp = Path('/data/hayley/temp.text')
+#     run_test_change_suffix(fp)
+
+
+# def test_change_suffix2():
+#     fp = Path('/data/hayley/image.pngng')
+#     run_test_change_suffix(fp)
 
 
 def test_get_next_version():
@@ -49,3 +51,41 @@ def test_info_img_dir():
     assert d['n_imgs'] == 266
     assert len(d['img_sizes']) == 1
     
+def test_get_qr():
+    x = 13
+    divider = 2
+    assert get_qr(x, divider) == (6,1)
+
+
+def test_count_files_1():
+    img_dir = Path('/data/datasets/neurips23_gm256/gan-stylegan2')
+    is_valid_fp = None
+    # is_valid_fp = is_img_fp
+    c = count_files(img_dir, is_valid_fp=is_valid_fp)
+    assert c == 100_000
+    
+def test_count_files_2():
+    img_dir = Path('/data/datasets/neurips23_gm256/gan-stylegan2')
+    # is_valid_fp = None
+    is_valid_fp = is_img_fp
+    c = count_files(img_dir, is_valid_fp=is_valid_fp)
+    assert c == 100_000
+
+def test_count_files_is_npy():
+    root_dir = Path('/data/datasets/GM256_fft')
+    is_npy_file = lambda fp:  fp.suffix == '.npy'
+    for sub_dir in root_dir.iterdir():
+        if not is_valid_dir(sub_dir):
+            continue
+        dirname = sub_dir.name
+        n_npy_files =  count_files(sub_dir, is_valid_fp=is_npy_file)
+        print(f"{dirname}:  {n_npy_files} num. of npy files")
+    print('Done!')
+        
+
+
+    
+if __name__ == '__main__':
+    # test_count_files_1()
+    # test_count_files_2()
+    test_count_files_is_npy()
