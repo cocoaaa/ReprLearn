@@ -23,12 +23,12 @@ import torchvision.transforms as transforms
 from torch.utils.data import Subset
 from torch.utils.tensorboard import SummaryWriter
 # ipython bug
-from utils.evaluations import get_loss_value
-from utils.linear_algebra import FrequentDirectionAccountant
-from utils.nn_manipulation import count_params, flatten_grads
-from utils.reproducibility import set_seed
-from utils.resnet import get_resnet
-from utils.misc import now2str
+from reprlearn.utils.evaluations import get_loss_value
+from reprlearn.utils.linear_algebra import FrequentDirectionAccountant
+from reprlearn.utils.nn_manipulation import count_params, flatten_grads
+from reprlearn.utils.reproducibility import set_seed
+from reprlearn.utils.resnet import get_resnet
+from reprlearn.utils.misc import now2str
 
 # "Fixed" hyperparameters
 NUM_EPOCHS = 200
