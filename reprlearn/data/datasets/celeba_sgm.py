@@ -4,7 +4,7 @@ from typing import Dict, Any, Iterable, Tuple, Optional
 from xml.dom.pulldom import default_bufsize
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
-from reprlearn.data.datasets.base import ImageFolderDataset
+from reprlearn.data.datasets.base import SingleImageSourceDataset
 """
 2022-07-24: wip 
 - Look at datasets.base.ImageFolderDataset for dataset class for training gms on celeba
@@ -46,7 +46,7 @@ def get_my_celeba64_dataset(
     transforms.ToTensor(),
     ])
 
-    return ImageFolderDataset(img_dir=img_dir, transform=xform)
+    return SingleImageSourceDataset(img_dir=img_dir, transform=xform)
 
 
 def get_my_celeba64_dataloader(
