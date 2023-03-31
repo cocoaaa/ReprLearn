@@ -8,6 +8,7 @@ import skimage as ski
 from skimage import io
 from pathlib import Path
 from reprlearn.visualize.utils import show_npimgs
+from reprlearn.utils.misc import is_img_fp
 from IPython.core.debugger import set_trace as breakpoint
 
 
@@ -22,9 +23,12 @@ def crop_center(img: np.ndarray, target_h: int, target_w: int):
 #
 #
 #############################################################################################
-def compute_magnitude_spectrum_of_grayscale_np(img: np.ndarray,
-                               target_size: Tuple[int,int]=None,
-                               show: bool=False):
+def compute_magnitude_spectrum_of_grayscale_np(
+    onechannel_arr: np.ndarray,
+    target_size: Tuple[int,int]=None,
+    show: bool=False,
+    **fft_kwargs
+    ) -> np.ndarray:
     """Read the image from `img_fp` as a float image in grayscale, i.e. in range [0.0., 1.0]),
     and transform the image from the spatial domain to frequency domain via np.fft.fft2, 
     and compute the magnitude spectrum using np.abs on the frequency representation
@@ -36,21 +40,23 @@ def compute_magnitude_spectrum_of_grayscale_np(img: np.ndarray,
     
     Args
     ----
-    img_fp : Path
+    img (np.ndarray) : gray_npimg of shape (h,w)
     target_size : Tupel[int, int]
         (target_h, target_w). if None, use the height and width of the image.
+    **fft_kwargs: see np.fft.fft2 arguments
+        - e.g.: norm='ortho' 
         
     Returns
     -------
         magnitude_spectrum: a 2dim numpy array, same sized as the input img
         
     """
-    assert len(img.shape) == 2, "This function works on only grayscale image"
+    assert len(onechannel_arr.shape) == 2, "This function works on only grayscale image"
     if target_size is None:
-        target_size = img.shape
+        target_size = onechannel_arr.shape
         
     # Take the 2-dimensional DFT and centre the frequencies
-    f = np.fft.fft2(img, s=target_size)
+    f = np.fft.fft2(onechannel_arr, s=target_size, **fft_kwargs)
     fshift = np.fft.fftshift(f) 
     mag_spectrum = np.abs(fshift)
     
@@ -64,7 +70,8 @@ def compute_magnitude_spectrum_of_grayscale_np(img: np.ndarray,
 def compute_magnitude_spectrum_of_grayscale_fp(img_fp: Path, 
                                target_size: Optional[Tuple[int,int]]=None,
                                transform: Optional[Callable]=None,
-                               show: bool=False):
+                               show: bool=False,
+                               **fft_kwargs) -> np.ndarray:
     """Compute the mag. of spectrum of an image in `img_fp` as a grayscale
     Input: path to an image (could be rgb)
     Ouput: magnitude of spectrum F of the image in grayscale
@@ -76,32 +83,68 @@ def compute_magnitude_spectrum_of_grayscale_fp(img_fp: Path,
     transform: Callable
         apply this function on npimage if not None
     show : true to show the mag. spectrum in logscale
-    
+    **fft_kwargs: see np.fft.fft2 arguments
+        - e.g.: norm='ortho'  
     Returns
     -------
     mag_spectrun of the image in grayscale
         
     """
-    img = io.imread(img_fp, as_gray=True) #float64 image in grayscale (so no color channel); [0.0., 1.0]
+    gray_npimg = io.imread(img_fp, as_gray=True) #float64 image in grayscale (so no color channel); [0.0., 1.0]
     
     if transform is not None:
-        img = transform(img)
+        gray_npimg = transform(gray_npimg)
 
-    mag_spectrum = compute_magnitude_spectrum_of_grayscale_np(img, target_size, show)
+    mag_spectrum = compute_magnitude_spectrum_of_grayscale_np(gray_npimg, target_size, show, **fft_kwargs)
     return mag_spectrum
 
 
-def compute_onechannel_ffts(img_fp: Path,
+def compute_and_save_magnitude_spectrum_of_grayscale_onedir(
+    img_dir:Path,
+    out_dir:Path,
+    out_suffix: Optional[str]='.png',
+    target_size: Optional[Tuple[int,int]]=None,
+    transform: Optional[Callable]=None,
+    save: bool=True,
+    show: bool=False,
+    **fft_kwargs
+) -> None:
+    for img_fp in img_dir.iterdir():
+        if not is_img_fp(img_fp):
+            continue
+        
+        fp_stem = img_fp.stem #0000
+        
+        f = compute_magnitude_spectrum_of_grayscale_fp(
+            img_fp,
+            target_size=target_size,
+            transform=transform,
+            show=show, 
+            **fft_kwargs
+            )
+        
+        out_fn = out_dir / fp_stem + out_suffix
+        print(f.min(), f.max())
+        
+        # breakpoint()
+        
+           
+
+
+def compute_onechannel_fft_options(img_fp: Path,
                             kernel_size: int, 
                             use_grayscale:bool=True,
                             channel_ind: Optional[int]=None,
                             show: bool=False,
+                            **fft_kwargs
                            ) -> List[np.array]:
     """ Given img in img_fp, 
     either convert rgb to grayscale )if `use_grayscale` is true,
     or take the `channel_ind`th channel of the image if `use_grayscale` is false 
     and `channel_ind` is not None,
     
+    **fft_kwargs: see np.fft.fft2 arguments
+        - e.g.: norm='ortho' 
     Returns: a list of 2d spectrums of img, blurred img, highpass img, and 
     highpass image whose values are clipped to range [0,1]
     """
@@ -119,10 +162,10 @@ def compute_onechannel_ffts(img_fp: Path,
     clipped_high_img = clip_floatimg(high_img)
 
     # freq. domain
-    f = compute_magnitude_spectrum_of_grayscale_np(img)
-    low_f = compute_magnitude_spectrum_of_grayscale_np(blurred_img)
-    high_f = compute_magnitude_spectrum_of_grayscale_np(high_img)
-    clipped_high_f = compute_magnitude_spectrum_of_grayscale_np(clipped_high_img)
+    f = compute_magnitude_spectrum_of_grayscale_np(img, **fft_kwargs)
+    low_f = compute_magnitude_spectrum_of_grayscale_np(blurred_img, **fft_kwargs)
+    high_f = compute_magnitude_spectrum_of_grayscale_np(high_img, **fft_kwargs)
+    clipped_high_f = compute_magnitude_spectrum_of_grayscale_np(clipped_high_img, **fft_kwargs)
 
     if show:
         show_npimgs(
@@ -146,18 +189,22 @@ def compute_avg_magnitude_spectrum_of_grayscale(img_dir: Path,
                                    max_n_imgs: Optional[int]=2_000,
                                    transform: Optional[Callable]=None,
                                    verbose: bool=False,
+                                   **fft_kwargs
                                   ):
     """Compute Avg. mag. spectrum using (all or max_num_samples) images in the img_dir folder.
     If the image is rgb, we first convert it to grayscale before applying the DFT.
     
+    
+    **fft_kwargs: see np.fft.fft2 arguments
+        - e.g.: norm='ortho' 
     """
     avg_mag_spectrum = None
     
     n_imgs = 0 
     for img_fp in img_dir.iterdir():
-        if not img_fp.is_file():
+        if not is_img_fp(img_fp):
             continue
-        mag_spectrum = compute_magnitude_spectrum_of_grayscale_fp(img_fp, target_size=target_size, transform=transform)
+        mag_spectrum = compute_magnitude_spectrum_of_grayscale_fp(img_fp, target_size=target_size, transform=transform, **fft_kwargs)
 
         if avg_mag_spectrum is None:
             avg_mag_spectrum = mag_spectrum
@@ -188,6 +235,7 @@ def compute_avg_magnitude_spectrum_of_grayscale(img_dir: Path,
 #############################################################################################
 def compute_magnitude_spectrum_channelwise_np(img: np.ndarray,
                                            target_size: Optional[Tuple[int, int]]=None,
+                                           **fft_kwargs
                                            ):
     """ 
     img : np.ndarray
@@ -207,7 +255,7 @@ def compute_magnitude_spectrum_channelwise_np(img: np.ndarray,
     mag_f_rgb = np.zeros((*target_size, 3))
     for id_c, color_name in id2color.items():
         channel = img[:,:,id_c]
-        mag_channel = compute_magnitude_spectrum_of_grayscale_np(channel, target_size)
+        mag_channel = compute_magnitude_spectrum_of_grayscale_np(channel, target_size, **fft_kwargs)
         mag_f_rgb[:,:,id_c] = mag_channel
         
     return mag_f_rgb
@@ -217,6 +265,7 @@ def compute_magnitude_spectrum_channelwise_fp(
     img_fp: Path, 
     target_size: Optional[Tuple[int, int]]=None,
     transform: Optional[Callable]=None,
+    **fft_kwargs
     ):
     
     img = io.imread(img_fp) / 255.0 # float image [0.0, 1.0]
@@ -224,7 +273,7 @@ def compute_magnitude_spectrum_channelwise_fp(
         img = transform(img)
     #todo: clip?
 
-    mag_f_rgb = compute_magnitude_spectrum_channelwise_np(img, target_size)
+    mag_f_rgb = compute_magnitude_spectrum_channelwise_np(img, target_size, **fft_kwargs)
         
     return mag_f_rgb
 
@@ -234,6 +283,7 @@ def compute_normed_log_mag_spectrum_channelwise_fp(img_fp: Path,
                                         normalize: bool=True,
                                         show: bool=False,
                                         transform: Optional[Callable]=None,
+                                        **fft_kwargs
                                        ):
     """My implementation of the pre-proc in Zhang2020 for input to spectral classifier (A_classifier).
     - compute spectrum of each channel in the rgb image
@@ -245,7 +295,7 @@ def compute_normed_log_mag_spectrum_channelwise_fp(img_fp: Path,
     The resulting 3channel input (log_mag_f_rgb) is used as an input to train their classifier.
     
     """
-    mag_rgb = compute_magnitude_spectrum_channelwise_fp(img_fp, target_size, transform)
+    mag_rgb = compute_magnitude_spectrum_channelwise_fp(img_fp, target_size, transform, **fft_kwargs)
 #     info(mag_rgb) #0.09 ~ 23299
 
     #log mag
@@ -268,6 +318,7 @@ def compute_avg_normed_log_mag_spectrum_channelwise(
     normalize: Optional[bool]=True,
     max_n_imgs: Optional[int]=2_000,
     transform: Optional[Callable]=None,
+    **fft_kwargs
 
 ):
     """Take the average of normed_log_mag_f_rgb of all images in the img_dir.
@@ -282,13 +333,14 @@ def compute_avg_normed_log_mag_spectrum_channelwise(
     avg_mag_spectrum = None
     n_imgs = 0 
     for img_fp in img_dir.iterdir():
-        if not img_fp.is_file():
+        if not is_img_fp(img_fp):
             continue
         mag_spectrum = compute_normed_log_mag_spectrum_channelwise_fp(
             img_fp, 
             target_size=target_size, 
             normalize=normalize,
-            transform=transform
+            transform=transform,
+            **fft_kwargs
             )
 
         if avg_mag_spectrum is None:
@@ -405,7 +457,7 @@ def compute_avg_mag_spectrum_channelwise(
     avg_f_rgb = None
     n_imgs = 0 
     for img_fp in img_dir.iterdir():
-        if not img_fp.is_file():
+        if not is_img_fp(img_fp):
             continue
         
         #todo: apply high-pass filtering in pixel domain
