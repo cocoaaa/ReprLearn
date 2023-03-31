@@ -1,4 +1,5 @@
 import io
+from PIL import Image
 import math
 from pathlib import Path
 from typing import Tuple, Iterable, Optional, Union
@@ -36,15 +37,26 @@ def show_npimgs(npimgs: Iterable[np.ndarray], *,
                 titles: Iterable[Union[str, int]]=None,
                 nrows: int=None,
                 factor=3.0,
-                cmap:str = None,
                 title: Optional[str] = None,
-                set_axis_off: bool=True) -> Tuple[plt.Figure, plt.Axes]:
+                set_axis_off: Optional[bool]=True,
+                **imshow_kwargs,
+                ) -> Tuple[plt.Figure, plt.Axes]:
+    """
+    
+    imshow_kwargs:
+        - cmap (colors.Colormap) :
+        - norm (colors.Normalizer):
+            e.g. normalizer = colors.LogNorm(vmin=data.min(), vmax=data.max())
+                and set norm=normalizer
+        
+    """
+    
     n_imgs = len(npimgs)
     f, axes = get_fig(n_imgs, nrows=nrows, factor=factor)
 
     for i, ax in enumerate(axes):
         if i < n_imgs:
-            ax.imshow(npimgs[i], cmap=cmap)
+            ax.imshow(npimgs[i], **imshow_kwargs)
 
             if titles is not None:
                 ax.set_title(titles[i])
@@ -56,16 +68,40 @@ def show_npimgs(npimgs: Iterable[np.ndarray], *,
         f.suptitle(title)
     return f, axes
 
-def save_each_npimg(npimgs: Union[Iterable[np.ndarray], np.ndarray],
+def save_each_npimg(npimgs: Iterable[Union[np.ndarray, Image.Image]],
                    out_dir: Path,
                     prefix: Union[str, int]='',
-                   suffix_start_idx: int=0) -> None:
+                   suffix_start_idx: int=0,
+                   is_pilimg:bool=False,
+                   **plot_kwargs) -> None:
+    """Save each npimg in `npimgs` as png file using plt.imsave:
+    File naming convention: out_dir / {prefix}_{start_idx + i}.png for ith image 
+    in the given list.
+    Save npimg using `plt.imsave' if not is_pilimg, else the input is actually a pilimage,
+    and we save each pilimage using `PIL.Image.Image.save(fp)`.
     
+    Note:
+    - When the input images are np.arrays: 
+        if vmin and vmax are not given, then the min/max of each nparr is mapped 
+        to the min/max of the colormap (default, unless given as kwarg). 
+        So, not specifying the vmin/vmax in kwargs has essentially the same effect
+        as normalizing each nparr to [0.0., 1.0] and then converting each float value 
+        to a colorvalue in the colormap by linear-map (0.0 -> colormap.min, 1.0 -> colormap.max)
+        
+    Resources: 
+    - [plt.image.save](https://tinyurl.com/2jqcemdo) 
+    - [matplotlib.cm](https://matplotlib.org/stable/api/cm_api.html)
+
+    """    
     bs = len(npimgs)
     for i in range(bs):
         idx = suffix_start_idx + i
-        fp = out_dir / f'{prefix}_{idx}.png'
-        plt.imsave(fp, npimgs[i])
+        fp = out_dir / f'{prefix}_{idx:07d}.png'
+        
+        if not is_pilimg:
+            plt.imsave(fp, npimgs[i], **plot_kwargs)   
+        else: #npimgs are actually an array of pil_img's (rgb)
+            npimgs[i].save(fp, **plot_kwargs)
 #         print('saved: ', fp)
     
 
@@ -77,3 +113,4 @@ def plt_figure_to_np(fig, dpi=30):
                          newshape=(int(fig.bbox.bounds[3]), int(fig.bbox.bounds[2]), -1))
     io_buf.close()
     return img_arr
+
