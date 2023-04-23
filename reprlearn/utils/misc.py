@@ -137,9 +137,13 @@ def n_iter_per_epoch(dl:DataLoader):
 
 
 # image read io
-def read_image_as_tensor(img_fp: Path) -> torch.Tensor:
+def read_image_as_tensor(img_fp: Path, as_gray:Optional[bool]=False) -> torch.Tensor:
     # todo: test this function
-    return ToTensor()(Image.open(img_fp))
+    if as_gray:
+        return ToTensor()(Image.open(img_fp).convert('L')) 
+    else:
+        return ToTensor()(Image.open(img_fp))
+        
 
 
 # ===
