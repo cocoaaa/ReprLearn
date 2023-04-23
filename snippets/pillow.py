@@ -5,7 +5,7 @@ from pathlib import Path
 
 # load image as rgb
 def load_rgb(img_fp):
-    img = Image.open(img_fp).convert('RGB')
+    img = Image.open(img_fp).convert('RGB') # use 'L' for grayscale
     return img
 
    
