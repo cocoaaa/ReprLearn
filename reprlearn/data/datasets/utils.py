@@ -124,7 +124,8 @@ def create_dataset_df_from_root_dir(data_root: Path,
 
 def create_dataset_df_from_gm_root_dir(
     data_root: Path, 
-    use_model_fullname: Optional[bool] = False,
+    n_imgs_per_subdir: Optional[int]=None,
+    use_model_fullname: Optional[bool]=False,
     is_valid_dir:Optional[Callable[[str], bool]]=None,
     verbose=False) -> pd.DataFrame:
 
@@ -137,7 +138,7 @@ def create_dataset_df_from_gm_root_dir(
         |-- <img1>.png
         |-- <img2>.png
         |-- ...
-    |-- model1
+    |-- model1          # <fam_name>-<model-name>
         |-- <img1>.png  # any image name is okay.
         |-- <img2>.png
         |-- ...
@@ -156,6 +157,8 @@ def create_dataset_df_from_gm_root_dir(
     
     Args:
     - data_root (Path)             : fullpath to the root dir containing model_dir's 
+    - n_imgs_per_subdir (int)      : num. of images to use in the sorted img_fps in each subdir
+        If not specified (default None), use all images in each subdir
     - use_model_fullname (bool)    : if true, use `model_name` as the fullname of <fam_name>-<model_name> (ie. the subdir for that model)
     
     Returns:
@@ -167,11 +170,11 @@ def create_dataset_df_from_gm_root_dir(
     """
     if is_valid_dir is None:
         # is_valid_dir = lambda x:True
-        is_valid_dir = lambda fp: not (fp.startswith('.') and Path(fp).is_file())
+        is_valid_dir = lambda fp: not (str(fp).startswith('.') and fp.is_file())
     # print('str(.): is is valid?: ', is_valid_dir('.')) #debug
     
     subdirs = sorted([p for p in data_root.iterdir() 
-                      if p.is_dir() and is_valid_dir(str(p))])
+                      if p.is_dir() and is_valid_dir(p)])
     # print('subdirs sorted: ', subdirs) #debug
               
     all_img_fps = [] 
@@ -185,6 +188,10 @@ def create_dataset_df_from_gm_root_dir(
             model_name = model_fullname
         
         fps = sorted([str(fp) for fp in subdir.iterdir() if is_img_fp(fp)])
+        
+        if n_imgs_per_subdir is not None:
+            fps = fps[:n_imgs_per_subdir]
+            
         fam_names = [fam_name]*len(fps)
         model_names = [model_name]*len(fps)
         # todo (?)
@@ -204,7 +211,7 @@ def create_dataset_df_from_gm_root_dir(
             print('model_full: ', model_fullname)
             print('model_name: ', model_name)
             print('fam_name: ', fam_name)
-            print('n imgs: ', len(fps))
+            print('n imgs from subdir: ', len(fps))
             print('Done: ', fam_name, model_name)
         
     data = {'img_fp': all_img_fps,

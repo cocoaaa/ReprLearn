@@ -420,6 +420,9 @@ class DatasetFromDF(Dataset):
             label = self.target_xform(label)
         
         return img, label
-
+    
+    def compute_mean_std(self):
+        pass
+        
     
     
