@@ -12,6 +12,10 @@ from reprlearn.utils.misc import is_img_fp
 from IPython.core.debugger import set_trace as breakpoint
 
 
+def to_logscale(img: np.ndarray, eps=1e-12) -> np.ndarray:
+    return np.log(np.abs(img) + eps)
+    
+
 def crop_center(img: np.ndarray, target_h: int, target_w: int):
     y,x = img.shape[:2]
     startx = x//2-(target_w//2)
