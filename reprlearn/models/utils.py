@@ -174,3 +174,18 @@ def clone_module(module, memo=None):
     if hasattr(clone, 'flatten_parameters'):
         clone = clone._apply(lambda x: x)
     return clone
+
+
+def get_head(net:nn.Module, freeze:bool=True) -> nn.Module:
+    """get encoder for googlenet, resnet_uva, densenet"""
+    modules = list(net.children())[:-1] # input_net and inception_blocks
+    output_net_no_fc = nn.Sequential(
+        *list(net.output_net.children())[:-1] #drop the last Linear layer
+    )
+    modules.append(output_net_no_fc)
+    head = nn.Sequential(*modules)
+
+    if freeze:
+        for p in head.parameters():
+            p.requires_grad = False
+    return head
