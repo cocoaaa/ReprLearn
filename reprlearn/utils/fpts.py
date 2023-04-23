@@ -78,11 +78,36 @@ def save_01timgs_as_png(timgs: Union[torch.Tensor, List],
     return
 ### <<< end Helpers
 
+# def estimate_projection(
+#     img_fp: Path
+#     manifold: Iterable[torch.Tensor],
+#     metric: Optional[Callable]=None,
+#     # xform: Callable[[Image], Union[np.ndarray, torch.Tensor]],
+# ) -> Tuple[torch.Tensor, float]:
+#     """Find a point x_p in `dset` that is closest to `x_g` using distance metric of
+#     `metric`
+#     todo:
+#     - [ ] "manifold" naming might be assuming extra structure. we are considering
+#     only a set of datapts on the (true) data manifold which we have access through
+#     the sample only
+#     """
+#     metric = metric or squared_l2_dist
+    
+#     argmin = None
+#     d_min = np.inf
+#     for x in manifold:
+#         d_curr = metric(x_g, x)
+#         if d_curr < d_min:
+#             d_min = d_curr
+#             argmin = x
+#     return argmin, d_min.item()
+
+
 def estimate_projection(
     x_g: torch.Tensor,
     manifold: Iterable[torch.Tensor],
-    metric: Optional[Callable]=None
-) -> Tuple[torch.Tensor, float]:
+    metric: Optional[Callable]=None,
+) -> Tuple[torch.Tensor, int, float]:
     """Find a point x_p in `dset` that is closest to `x_g` using distance metric of
     `metric`
     todo:
@@ -93,13 +118,20 @@ def estimate_projection(
     metric = metric or squared_l2_dist
     
     argmin = None
+    argmin_idx = None
     d_min = np.inf
-    for x in manifold:
+    for idx, x in enumerate(manifold):
+        # print(idx, x)
         d_curr = metric(x_g, x)
+        print('d curr: ', d_curr)
+        print('d min: ', d_min)
+        
         if d_curr < d_min:
             d_min = d_curr
             argmin = x
-    return argmin, d_min.item()
+            argmin_idx = idx
+            
+    return argmin, argmin_idx, d_min.item()
         
 
 def compute_artifact(
@@ -112,9 +144,58 @@ def compute_artifact(
     Returns: artifact tensor of a := x_p - x_g
     
     """
-    x_p, _ = estimate_projection(x_g, manifold, metric)
+    x_p, argmin_idx, d_min = estimate_projection(x_g, manifold, metric)
     return x_p - x_g
+
+
+def estimate_projection_fp(
+    x_fp: Path,
+    manifold_fps: Iterable[Path],
+    metric: Optional[Callable]=None,
+) -> Tuple[torch.Tensor, int, float]:
+    """Find a point x_p in `dset` that is closest to `x_g` using distance metric of
+    `metric`
+    todo:
+    - [ ] "manifold" naming might be assuming extra structure. we are considering
+    only a set of datapts on the (true) data manifold which we have access through
+    the sample only
+    """
+    metric = metric or squared_l2_dist
     
+    x_g = read_image_as_tensor(x_fp)
+    
+    x_min = None
+    argmin_fp = None
+    d_min = np.inf
+    for idx, fp in enumerate(manifold_fps):
+        # print(idx, x)
+        x = read_image_as_tensor(fp)
+        d_curr = metric(x_g, x)
+        # print('d curr: ', d_curr)
+        # print('d min: ', d_min)
+        
+        if d_curr < d_min:
+            d_min = d_curr
+            x_min = x
+            argmin_fp = fp
+            
+    return x_min, argmin_fp, d_min.item()
+
+
+def compute_artifact_fp(
+    x_fp: torch.Tensor,
+    manifold_fps: Iterable[torch.Tensor],
+    metric: Optional[Callable]=None
+) -> torch.Tensor:
+    """ Compute an artifact (diff. vector) of `x_g` wrt the reference manifold
+    using the `metric` as the distance metric.
+    Returns: artifact tensor of a := x_p - x_g
+    
+    """
+    x_g = read_image_as_tensor(x_fp)
+    #todo -- here
+    x_p, argmin_idx, d_min = estimate_projection(x_g, manifold, metric)
+    return x_p - x_g 
         
 def compute_artifacts_in(
     fake_img_dir: Path,
@@ -161,8 +242,9 @@ def compute_artifacts(
     size_manifold = size_manifold or np.inf # to use all images in manifold_dir
     
     # reference manifold
-    manifold =[read_image_as_tensor(fp) for i, fp in enumerate(manifold_dir.iterdir())
-        if i < size_manifold and is_img_fp(fp)]
+    ref_img_fps = (img_fp for (i, img_fp) in enumerate(manifold_dir.iterdir()) 
+       if i < size_manifold and is_img_fp(img_fp))
+    manifold = map(read_image_as_tensor, ref_img_fps)
     
     # compute artifacts
     for i, fp in enumerate(fake_img_dir.iterdir()):
@@ -170,6 +252,8 @@ def compute_artifacts(
             continue
             
         x_g = read_image_as_tensor(fp)
+        #tdo: transform if not none
+        
         art = compute_artifact(x_g, manifold, metric) 
         
         # save art as an image: 
