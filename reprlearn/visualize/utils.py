@@ -437,7 +437,7 @@ def reduce_dim(data: np.ndarray,
     if algo_name == 'tsne':
         algo = manifold.TSNE(n_components=n_components,
                     **kwargs)
-    elif algo_name == 'iso':
+    elif algo_name == 'isomap':
         algo = manifold.Isomap(n_neighbors=n_neighbors, 
                                n_components=n_components,
                                **kwargs)
@@ -445,10 +445,47 @@ def reduce_dim(data: np.ndarray,
         algo = manifold.LocallyLinearEmbedding(n_neighbors=n_neighbors, 
                                                n_components=n_components,
                                                **kwargs)
-        
+    else:
+        raise ValueError("algo_name must be one of tsne, isomap, lle: ", algo_name)
     coords = algo.fit_transform(data)
     return coords
 
+
+def reduce_dim_and_plot(
+    data:np.ndarray, 
+    labels:np.ndarray, 
+    algo_name: str,
+    n_components: int=2,
+    ax:plt.Axes=None,
+    title:str=None,
+    figsize:Optional[Tuple[int,int]]=None,
+    **kwargs) -> Tuple[np.ndarray, plt.Axes]:
+    """modified: https://github.com/2-Chae/PyTorch-tSNE/blob/main/main.py
+    
+    Args
+    ----
+    - data (np.ndarray): batch of datapoints in shape (N, data-dim1, 2, 3...). 
+        We will flatten the data to (N, -1) before running tsne algorithm
+    - labels (np.ndarray): labels to use on each datapoint in data. shape: (N,) or (N,1)
+        len(labels) must be the same as len(data)
+    - kwargs   : kwargs to be passed to dim-reduction functions (from sklearn.manifold.<algo>)
+    
+    Returns
+    -------
+    coords (np.ndarray): (nsamples, n_components=2) np.ndarray of the data coordinates in a reduced dimensional space
+    ax (plt.Axes): axis with scatterplot of data in tsne coordinates.
+        - color-coded according to the labels
+    """
+    print(f'Applying dim-reduction with {algo_name}')
+    algo_name = algo_name.lower()
+    tcoords = reduce_dim(data, algo_name=algo_name, n_components=n_components, **kwargs)
+    ax = scatterplot_2d(tcoords, labels, ax=ax, 
+                        title=title,figsize=figsize)
+
+    return tcoords, ax
+
+    # plt.savefig(out_dir/'tsne.png', bbox_inches='tight')
+    # print('Saved tsne plot!')
 
 def run_and_plot_tsne(data:np.ndarray, 
               labels:np.ndarray, 
@@ -565,3 +602,76 @@ def plot_2d_coords(data_2d: np.ndarray,
     # print('saved!')
     # plt.show()
     return ax 
+
+# classifiers
+def plot_confusion_matrix(conf_mat,
+                          hide_spines=False,
+                          hide_ticks=False,
+                          figsize=None,
+                          cmap=None,
+                          colorbar=False,
+                          show_absolute=True,
+                          show_normed=False,
+                          class_names=None):
+
+    if not (show_absolute or show_normed):
+        raise AssertionError('Both show_absolute and show_normed are False')
+    if class_names is not None and len(class_names) != len(conf_mat):
+        raise AssertionError('len(class_names) should be equal to number of'
+                             'classes in the dataset')
+
+    total_samples = conf_mat.sum(axis=1)[:, np.newaxis]
+    normed_conf_mat = conf_mat.astype('float') / total_samples
+
+    fig, ax = plt.subplots(figsize=figsize)
+    ax.grid(False)
+    if cmap is None:
+        cmap = plt.cm.Blues
+
+    if figsize is None:
+        figsize = (len(conf_mat)*1.25, len(conf_mat)*1.25)
+
+    if show_normed:
+        matshow = ax.matshow(normed_conf_mat, cmap=cmap)
+    else:
+        matshow = ax.matshow(conf_mat, cmap=cmap)
+
+    if colorbar:
+        fig.colorbar(matshow)
+
+    for i in range(conf_mat.shape[0]):
+        for j in range(conf_mat.shape[1]):
+            cell_text = ""
+            if show_absolute:
+                cell_text += format(conf_mat[i, j], 'd')
+                if show_normed:
+                    cell_text += "\n" + '('
+                    cell_text += format(normed_conf_mat[i, j], '.2f') + ')'
+            else:
+                cell_text += format(normed_conf_mat[i, j], '.2f')
+            ax.text(x=j,
+                    y=i,
+                    s=cell_text,
+                    va='center',
+                    ha='center',
+                    color="white" if normed_conf_mat[i, j] > 0.5 else "black")
+    
+    if class_names is not None:
+        tick_marks = np.arange(len(class_names))
+        plt.xticks(tick_marks, class_names, rotation=90)
+        plt.yticks(tick_marks, class_names)
+        
+    if hide_spines:
+        ax.spines['right'].set_visible(False)
+        ax.spines['top'].set_visible(False)
+        ax.spines['left'].set_visible(False)
+        ax.spines['bottom'].set_visible(False)
+    ax.yaxis.set_ticks_position('left')
+    ax.xaxis.set_ticks_position('bottom')
+    if hide_ticks:
+        ax.axes.get_yaxis().set_ticks([])
+        ax.axes.get_xaxis().set_ticks([])
+
+    plt.xlabel('predicted label')
+    plt.ylabel('true label')
+    return fig, ax
