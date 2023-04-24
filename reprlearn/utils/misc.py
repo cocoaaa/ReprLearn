@@ -138,11 +138,13 @@ def n_iter_per_epoch(dl:DataLoader):
 
 # image read io
 def read_image_as_tensor(img_fp: Path, as_gray:Optional[bool]=False) -> torch.Tensor:
-    # todo: test this function
-    if as_gray:
-        return ToTensor()(Image.open(img_fp).convert('L')) 
-    else:
-        return ToTensor()(Image.open(img_fp))
+    # Handles image files stored as 4-channels (RGBA)
+    with open(img_fp, "rb") as f:
+        img = Image.open(f)
+        if as_gray:
+            return ToTensor()(img.convert('L')) 
+        else:
+            return ToTensor()(img.convert('RGB'))
         
 
 
@@ -249,7 +251,24 @@ def is_img_fp(fp:Path, valid_suffixes:List[str]=['.png', '.jpeg', '.jpg']):
 def is_valid_dir(fp: Union[Path,str]) -> bool:
     if isinstance(fp, Path):
         fp = str(fp) 
-    return not (fp.startswith('.') and Path(fp).is_file())
+    return Path(fp).is_dir() and not fp.startswith('.')
+                  
+def get_img_fps(img_dir:Path,
+            n_imgs: int, 
+            shuffle: Optional[bool]=False, 
+            seed: Optional[int]=None
+           ) -> Iterable[Path]:
+    """Get `n_imgs` number of img filepaths in `img_dir`.
+    If shuffle, use the seed to fix random seed, and shuffle the sorted list of fps.
+    """ 
+    fps = [img_fp for img_fp in img_dir.iterdir()
+           if is_img_fp(img_fp)
+          ]
+    fps = sorted(fps)
+    if shuffle:
+        np.random.seed(seed)
+        fps = np.shuffle(fps)
+    return fps[:n_imgs]
 
 
 def count_imgs(dir_path: Path, valid_suffixes:List[str]=['.png', '.jpeg', '.jpg']) -> int:
