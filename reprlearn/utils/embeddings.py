@@ -11,8 +11,10 @@ from torchvision import transforms
 import torchvision.models as models
 from torch.utils.data import Dataset, DataLoader
 
+CACHE_DIR = str(Path(os.environ.get('myssd', '~'))/'data/torch_cache')
+                 
 def get_resnet50_head(pretrained: bool=True,
-                      cache_dir: Optional[Union[Path,str]]='/docker/data/torch_cache'):
+                      cache_dir: Optional[Union[Path,str]]=CACHE_DIR):
     os.environ['TORCH_HOME'] = cache_dir
     resnet = models.resnet50(pretrained=pretrained)
     modules = list(resnet.children())[:-1]
@@ -23,7 +25,7 @@ def get_resnet50_head(pretrained: bool=True,
 
 
 def get_barlowtwin_head(pretrained:bool=True,
-                      cache_dir: Optional[Union[Path,str]]='/docker/data/torch_cache'):
+                      cache_dir: Optional[Union[Path,str]]=CACHE_DIR):
 
     pretrained_bt = torch.hub.load('facebookresearch/barlowtwins:main', 'resnet50')
     # get the head of resnet50 trained in barlow-twin paper
