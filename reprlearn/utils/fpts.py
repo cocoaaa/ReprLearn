@@ -149,10 +149,10 @@ def compute_artifact(
 
 
 def estimate_projection_fp(
-    x_fp: Path,
+    x_g_fp: Path,
     manifold_fps: Iterable[Path],
     metric: Optional[Callable]=None,
-) -> Tuple[torch.Tensor, int, float]:
+) -> Tuple[Path, torch.Tensor, float]:
     """Find a point x_p in `dset` that is closest to `x_g` using distance metric of
     `metric`
     todo:
@@ -162,7 +162,7 @@ def estimate_projection_fp(
     """
     metric = metric or squared_l2_dist
     
-    x_g = read_image_as_tensor(x_fp)
+    x_g = read_image_as_tensor(x_g_fp)
     
     x_min = None
     argmin_fp = None
@@ -179,12 +179,12 @@ def estimate_projection_fp(
             x_min = x
             argmin_fp = fp
             
-    return x_min, argmin_fp, d_min.item()
+    return argmin_fp, x_min, d_min.item()
 
 
 def compute_artifact_fp(
     x_fp: torch.Tensor,
-    manifold_fps: Iterable[torch.Tensor],
+    manifold_fps: Iterable[Path],
     metric: Optional[Callable]=None
 ) -> torch.Tensor:
     """ Compute an artifact (diff. vector) of `x_g` wrt the reference manifold
@@ -194,7 +194,7 @@ def compute_artifact_fp(
     """
     x_g = read_image_as_tensor(x_fp)
     #todo -- here
-    x_p, argmin_idx, d_min = estimate_projection(x_g, manifold, metric)
+    x_p, argmin_idx, d_min = estimate_projection_fp(x_g, manifold_fps, metric)
     return x_p - x_g 
         
 def compute_artifacts_in(
