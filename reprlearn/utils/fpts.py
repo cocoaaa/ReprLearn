@@ -4,7 +4,8 @@
 # in that its datapoints/masses are distributed according to the prob. distributionP_z
 
 # General modules
-from typing import Union, Optional, Callable, Tuple, List, Iterable
+import time
+from typing import Union, Optional, Callable, Tuple, List, Iterable, Dict, Any
 from genericpath import exists
 import os, math, argparse
 from pathlib import Path
@@ -107,7 +108,7 @@ def estimate_projection(
     x_g: torch.Tensor,
     manifold: Iterable[torch.Tensor],
     metric: Optional[Callable]=None,
-) -> Tuple[torch.Tensor, int, float]:
+) -> Tuple[int, torch.Tensor, float]:
     """Find a point x_p in `dset` that is closest to `x_g` using distance metric of
     `metric`
     todo:
@@ -117,21 +118,21 @@ def estimate_projection(
     """
     metric = metric or squared_l2_dist
     
-    argmin = None
+    x_min = None
     argmin_idx = None
     d_min = np.inf
     for idx, x in enumerate(manifold):
         # print(idx, x)
         d_curr = metric(x_g, x)
-        print('d curr: ', d_curr)
-        print('d min: ', d_min)
+        # print('d curr: ', d_curr)
+        # print('d min: ', d_min)
         
         if d_curr < d_min:
             d_min = d_curr
-            argmin = x
+            x_min = x
             argmin_idx = idx
             
-    return argmin, argmin_idx, d_min.item()
+    return argmin_idx, x_min, d_min.item()
         
 
 def compute_artifact(
@@ -272,6 +273,126 @@ def compute_artifacts(
             
     # print('Done computing artifacts for: ', fake_img_dir) 
                              
+# Batch version of estimate_projection
+def estimate_projection_batch(x_g:torch.Tensor, 
+                              dl_manifold: DataLoader,
+                              device: Union[torch.device,str],
+                              verbose:bool=False,
+                              debug: bool=False
+                             ) -> Dict[str, Any]:
+    """ Given a query timg, find the closest point (tensor) in dl_manifold.
+    Implemented with dataloader over the manifold dataset.
+    Returns:
+    a dictionary with keys: 
+    - "min_fp"(Path), 
+    - "min_x" (torch.Tensor)
+    - "min_dist" (float)
+    """
+    x_g = x_g.to(device)
+    bs = dl_manifold.batch_size
+    min_fp = None
+    min_idx = None
+    min_x = None
+    min_dist = np.inf
+    if verbose:
+        print(f'x_g device: {x_g.device}')
+    for batch_id, (batch_x, _) in enumerate(dl_manifold):
+        
+        batch_x = batch_x.to(device)
+        
+        if verbose and batch_id == 0:
+            print(f'batch_x device: {batch_x.device}')
+
+        start_idx = batch_id * bs
+        
+        # compute dist from x_g to each x in batch_x
+        batch_dist =  torch.sum((x_g - batch_x) ** 2,
+                                dim=(1,2,3)
+                                )
+    #     print(f'batch_dist shape: {batch_dist.shape}') #should be: (bs,)
+        
+        best_inner_idx = torch.argmin(batch_dist, dim=0).item()
+                # current candidate
+        curr_min_idx = start_idx + best_inner_idx
+        curr_min_x = batch_x[best_inner_idx]
+        curr_min_dist = batch_dist[best_inner_idx].item()
+        
+        # update if better:
+        if curr_min_dist < min_dist:
+            min_idx = curr_min_idx
+            min_x = curr_min_x
+            min_dist = curr_min_dist
+            if verbose:
+                print(f'Updated to new min_dist: {min_dist}')
+            
+        if batch_id == 0 and debug:
+            show_timgs(batch_x, titles=batch_dist.numpy());
+            
+    # get the filepath to the "closest" point 
+    min_fp = dl_manifold.dataset.df['img_fp'].iloc[min_idx] 
+    
+    if verbose:
+        print(f'min_idx: {min_idx}')
+        print(f'min_fp: {min_fp}')
+        print(f'min_x: {min_x}')
+        print(f'min_dist: {min_dist}')
+        
+    return {
+        "min_fp": min_fp,
+        "min_x": min_x,
+        "min_dist": min_dist
+    }
+
+    # temp; to debug
+# def process(df: pd.DataFrame,
+#             device: Union[torch.Device, str],
+#             print_every: int,
+#            ):
+#     start = time.time()
+    
+#     proj_fps = [ ] 
+#     start_index = df.index[0]
+#     end_index = df.index[-1]
+#     n_total = len(df)
+#     logger.info(f"RUN: Processing img_fps in df: {start_index} to {end_index}...")
+
+#     for i, x_g_fp in enumerate(df['img_fp']):
+
+#         if (i+1)%print_every == 0:
+#             logger.info(f'{i+1}th image: {(i+1)*100/n_total:.2f} % ...')
+
+#         fam_name = df['fam_name'].iloc[i]
+#         # no need to process reals:
+#         if fam_name == 'real':
+#             min_fp = x_g_fp
+#         else:
+#             x_g = xform_rgb(load_pil_img(x_g_fp))       ## todo: xform_rgb vs. xform_freq
+#             result = estimate_projection_batch(x_g, 
+#                                                dl_manifold=real_dl_rgb, ## todo: real_dl_rgb vs real_dl_freq
+#                                               device=device)
+#             min_fp = result['min_fp']
+#             # min_dist = result['min_dist']
+#         proj_fps.append(min_fp)
+
+#     # done:
+#     df['proj_fp'] = proj_fps
+#     end = time.time()
+#     logger.info(f'Done: computing proj_fp for images in df_{mode}!')
+#     logger.info(f'Took: {(end-start) / 60.} mins; size manifold={SIZE_MANIFOLD}; n_img_fps={n_total}')
+    
+#     # save:
+#     dset_name = 'gm256'
+#     feature_space = 'rgb'  #'fft'
+#     df.to_csv(f'df-{mode}-{start_index}-{end_index}-with-proj-{feature_space}-{dset_name}-onek-{now2str()}.csv')
+#     logger.info(f'Saved processed df: with proj_fp for df_{mode}!')
+#     logger.info(f'=== Done: art-{feature_space} for  df_{mode}: {start_index}:{end_index} ===')
+    
+
+
+          
+          
+    
+    
 
 # def estimate_projection_v1(x_g:torch.Tensor, img_dir:Path, d_x: Callable) -> Tuple[torch.Tensor, float]:
 #     """
@@ -320,94 +441,83 @@ def compute_artifacts(
 #     return argmin, min_d
 
 # - [ ] todo: old. remove
-def compute_artifacts_from_batch(
-    dataset: Dataset, 
-    batch_xg: torch.Tensor, #batch of x's generated by G,
-    n_datapts: int,
-    d_x: Callable,
-):
-    """
-    - [ ] todo: old. remove
-    Args
-    ----
-    - data_dir : path to the directory containing all observed datapoint x's
-    - G : generator module
-    - latent_dim : dimension of the latent space G was paired with
-    - batch_size : size of each batch used in sampling z in mini-batches, 
-        until we collect the whole entired number of samples 
-    - n_samples : number of samples to sample from Pz (to generated xg's and 
-        to compute each xg's artifact/difference vector to the data manifold)
-    - save_dir : path to directory to save the computed artifacts
-    - save_artifacts : bool to indicate whether to save the artifacts (same dim as x's,
-        i.e., an image dimension) to disk.
+# def compute_artifacts_from_batch(
+#     dataset: Dataset, 
+#     batch_xg: torch.Tensor, #batch of x's generated by G,
+#     n_datapts: int,
+#     d_x: Callable,
+# ):
+#     """
+#     - [ ] todo: old. remove
+#     Args
+#     ---
 
-    Returns
-    -------
-    None
+#     Returns
+#     -------
 
-    """
-    # todo: test this function
-    # todo: make sure this works on xg that is a batch of samples (bs, 3, h, w)
-    # batch_x_proj = estimate_projection(batch_xg, dataset)
-    batch_x_proj = [ ] 
-    for x_g in batch_xg:
-        x_p, _ = estimate_projection(x_g, dataset, n_datapts, d_x) 
-        batch_x_proj.append(x_p)
-    batch_x_proj = torch.stack(batch_x_proj)
+#     """
+#     # todo: test this function
+#     # todo: make sure this works on xg that is a batch of samples (bs, 3, h, w)
+#     # batch_x_proj = estimate_projection(batch_xg, dataset)
+#     batch_x_proj = [ ] 
+#     for x_g in batch_xg:
+#         x_p, _ = estimate_projection(x_g, dataset, n_datapts, d_x) 
+#         batch_x_proj.append(x_p)
+#     batch_x_proj = torch.stack(batch_x_proj)
 
-    batch_artifact = batch_x_proj - batch_xg
-    return batch_artifact
+#     batch_artifact = batch_x_proj - batch_xg
+#     return batch_artifact
 
-# - [ ] todo: old. remove
-def batch_compute_artifacts(
-    data_dirpath,
-    G, 
-    latent_dim, 
-    batch_size, 
-    n_samples, 
-    xsample_save_dir,
-    artifacts_save_dir,
-    save_xsamples: bool=False,
-    save_artifacts: bool=False,
-    ) -> Union[torch.Tensor,None]: # modified by cocoaaa (2022-07-25)
-    # Use cuda if available
-    use_gpu = torch.cuda.is_available()
-    device = torch.device("cuda" if use_gpu else "cpu")
+# # - [ ] todo: old. remove
+# def batch_compute_artifacts(
+#     data_dirpath,
+#     G, 
+#     latent_dim, 
+#     batch_size, 
+#     n_samples, 
+#     xsample_save_dir,
+#     artifacts_save_dir,
+#     save_xsamples: bool=False,
+#     save_artifacts: bool=False,
+#     ) -> Union[torch.Tensor,None]: # modified by cocoaaa (2022-07-25)
+#     # Use cuda if available
+#     use_gpu = torch.cuda.is_available()
+#     device = torch.device("cuda" if use_gpu else "cpu")
 
-    # Load generator weights from checkpoint
-    G.to(device)
+#     # Load generator weights from checkpoint
+#     G.to(device)
 
-    # Set G to eval mode
-    G.eval()
+#     # Set G to eval mode
+#     G.eval()
 
-    # Convert samples into numpy files and save images as PNG with max quality
-    # gen_samples_dir = os.path.join(save_dir, sample_dir_name)
-    if not os.path.exists(xsample_save_dir):
-        os.mkdir(xsample_save_dir)
-    if not os.path.exists(artifacts_save_dir):
-        os.mkdir(artifacts_save_dir)
+#     # Convert samples into numpy files and save images as PNG with max quality
+#     # gen_samples_dir = os.path.join(save_dir, sample_dir_name)
+#     if not os.path.exists(xsample_save_dir):
+#         os.mkdir(xsample_save_dir)
+#     if not os.path.exists(artifacts_save_dir):
+#         os.mkdir(artifacts_save_dir)
 
-    for i in range( int(math.ceil(n_samples/batch_size)) ):
-        # Fixed noise for sampling
-        z = torch.randn( min( batch_size, int(n_samples-batch_size*i) ), latent_dim, 1, 1).to(device)
+#     for i in range( int(math.ceil(n_samples/batch_size)) ):
+#         # Fixed noise for sampling
+#         z = torch.randn( min( batch_size, int(n_samples-batch_size*i) ), latent_dim, 1, 1).to(device)
 
-        # Generate samples and compute artifacts
-        # todo: test this function
+#         # Generate samples and compute artifacts
+#         # todo: test this function
 
-        with torch.no_grad():
+#         with torch.no_grad():
 
-            samples = G(z)
-            if save_xsamples:
-                save_samples_as_png(samples, xsample_save_dir, i*batch_size)
+#             samples = G(z)
+#             if save_xsamples:
+#                 save_samples_as_png(samples, xsample_save_dir, i*batch_size)
         
-            # compute artifacts
-            artifacts = compute_artifacts_from_batch(data_dirpath, G, latent_dim=latent_dim, batch_size=batch_size, n_samples=n_samples )
-            if save_artifacts:
-                save_samples_as_png(artifacts, artifacts_save_dir, i*batch_size)
+#             # compute artifacts
+#             artifacts = compute_artifacts_from_batch(data_dirpath, G, latent_dim=latent_dim, batch_size=batch_size, n_samples=n_samples )
+#             if save_artifacts:
+#                 save_samples_as_png(artifacts, artifacts_save_dir, i*batch_size)
             
-            print(f'Computed {i*batch_size} artifacts...')
-    print('Finished.')
-    return
+#             print(f'Computed {i*batch_size} artifacts...')
+#     print('Finished.')
+#     return
 
 
 def compute_artifacts_of_samples_in(
