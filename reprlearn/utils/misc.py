@@ -135,6 +135,14 @@ def n_iter_per_epoch(dl:DataLoader):
         return math.ceil(n_iter)
 
 
+def load_pil_img(img_fp: Path, as_gray:Optional[bool]=False) -> Image:
+    # Handles image files stored as 4-channels (RGBA)
+    with open(img_fp, "rb") as f:
+        img = Image.open(f)
+        if as_gray:
+            return img.convert('L')
+        else:
+            return img.convert('RGB')
 
 # image read io
 def read_image_as_tensor(img_fp: Path, as_gray:Optional[bool]=False) -> torch.Tensor:
