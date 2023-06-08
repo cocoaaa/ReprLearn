@@ -253,7 +253,7 @@ def stratified_split(
     #       ... 
     #      `labelK: [5,25,32, 151, ...]}
     inds_per_label = defaultdict(list)
-    for idx, row in df_all.iterrows():
+    for idx, (index, row) in enumerate(df_all.iterrows()):
     #     img_fp = row['img_fp']
     #     model_name = row['model_name']
     #     fam_name = row['fam_name']
@@ -296,6 +296,134 @@ def stratified_split(
             print(name, len(inds), inds[:5])
             if len(inds) != n_test_per_label:
                 print(f"WARNING: {name} does not have n_test_per_label rows: {len(inds)}")
+    # Good if each class in training index dict contains n_train_per_class inds!
+    # Good if each class in testing index dict contains n_test_per_class inds!
+    
+    # 3. Create df_train, df_test from each of the dict of inds-per-class
+    df_train = pd.DataFrame() # initialize with empty df
+    for label, inds in train_inds_per_label.items():
+        # grab a subset of df_all using this indices
+        df_train = pd.concat([df_train, df_all.iloc[inds]]) 
+        
+    df_test = pd.DataFrame() # initialize with empty df
+    for label, inds in test_inds_per_label.items():
+        # grab a subset of df_all using this indices
+        df_test = pd.concat([df_test, df_all.iloc[inds]]) 
+    
+    
+    if reset_index:
+        df_train.reset_index(inplace=True, drop=True)
+        df_test.reset_index(inplace=True, drop=True)
+
+    # -- verify
+    if verbose:
+        print('df_train: ', df_train.groupby(label_key).count())
+        print('df_test: ', df_test.groupby(label_key).count())
+    
+    return df_train, df_test 
+
+def stratified_split_by_ratio(
+    df_all, 
+    label_key: str, # one of the column names in df_all.columns
+    ratio_train_per_label: float,
+    ratio_test_per_label: Optional[float]=None,      
+    shuffle: Optional[bool]=False,
+    seed: Optional[int]=123,
+    reset_index: Optional[bool]=True,
+    verbose: Optional[bool]=False,
+    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Given a dataframe, split the dataframe into df_train and df_test by
+    selecting n_train_per_label number of indices (per label) and 
+    n_test_per_label num. of indices per label from df_all 
+    
+    Args:
+    - df_all (pd.DataFrame) : df 
+    - label_key (str): one of the string in df_all.columns that define what we consider as label
+    - ratio_train_per_label: fraction of n_rows per label for df_train out of the rows for the label
+                            (ie. n_train / n_total).
+                            Must be in range [0.0, 1.0]
+    - ratio_test_per_label: fraction  of n_rows per label to be collected to df_test out of the rows for the label
+                            (ie. n_test / n_total).
+                            If not specified, then use 1 - ratio_train_per_label. 
+                            Must be in range [0.0, 1.0]
+    - shuffle (bool) : if shuffle, shuffle in the index of df_all before spliting into two.
+        Otherwise, split the indices in the order of the given df_all.
+    - seed (int): random seed for shuffling. Not used if shuffle is False
+    - reset_index (bool): if true, reset indices of the created split df's. 
+    Returns:
+    -------
+    (df_train, df_test) : preserving the same structure of df_all (ie. containing data in all columns)
+    
+    """
+    def assert_range(r):
+        cond =  0.0 <= r and r <= 1.0  
+        assert cond, f"ratio must be in [0.0, 1.0]: {r}"
+    
+    assert_range(ratio_train_per_label)
+    
+    ratio_test_per_label = ratio_test_per_label or 1.0 - ratio_train_per_label
+    assert_range(ratio_test_per_label)
+    
+    # 1. create a dict of list of all indices belonging to each label
+    # ie. {'label1: [1, 100,21, ...],
+    #      'label2: [213, 91, 14, ...],
+    #       ... 
+    #      `labelK: [5,25,32, 151, ...]}
+    inds_per_label = defaultdict(list)
+    for idx, (index, row) in enumerate(df_all.iterrows()):
+    #     img_fp = row['img_fp']
+    #     model_name = row['model_name']
+    #     fam_name = row['fam_name']
+    #     print(img_fp)
+    #     print(model_name, fam_name)
+        inds_per_label[row[label_key]].append(idx)
+        
+    # 2. split the inds_per_class for train and test
+    # -- first shuffle each index list per label 
+    if shuffle:
+        np.random.seed(seed)
+        for label, inds in inds_per_label.items():
+        #     print(f'\n{label}')
+        #     print(inds[:5])
+            np.random.shuffle(inds)
+        #     print('check if shuffled: ', inds[:5], inds_per_label[label][:5])
+            # great, np.shuffle (in-place) still effects linger on the dictionary's value (list of shuffled inds)
+
+    # Dict: number of train datapts per label
+    dict_n_train_per_label = {
+        class_name: int(len(inds) * ratio_train_per_label)  #int(np.floor)
+       for class_name, inds in inds_per_label.items()
+    }
+    # Dict: number of test datapts per label
+    dict_n_test_per_label = {
+        class_name: int(np.ceil(len(inds) * ratio_test_per_label))
+       for class_name, inds in inds_per_label.items()
+    }
+    
+    # Collect train_inds for each label/class
+    train_inds_per_label = {
+        class_name: inds[:dict_n_train_per_label[class_name]]
+        for class_name, inds in inds_per_label.items()
+    }
+
+    test_inds_per_label = {
+        class_name: inds[dict_n_train_per_label[class_name]:dict_n_train_per_label[class_name] +dict_n_test_per_label[class_name]]
+        for class_name, inds in inds_per_label.items()
+    }
+
+    # make sure they are ok:
+    if verbose:
+        print('\nFor train inds per label: ')
+        for class_name,inds in train_inds_per_label.items():
+            print(class_name, len(inds), inds[:5])
+            if len(inds) != dict_n_train_per_label[class_name]:
+                print(f"WARNING: {class_name} does not have n_train_per_label rows: {len(inds)}")
+
+        print('\nFor test inds per label: ')
+        for class_name,inds in test_inds_per_label.items():
+            print(class_name, len(inds), inds[:5])
+            if len(inds) != dict_n_test_per_label[class_name]:
+                print(f"WARNING: {class_name} does not have n_test_per_label rows: {len(inds)}")
     # Good if each class in training index dict contains n_train_per_class inds!
     # Good if each class in testing index dict contains n_test_per_class inds!
     
