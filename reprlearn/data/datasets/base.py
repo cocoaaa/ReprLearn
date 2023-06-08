@@ -1,16 +1,19 @@
 import os
 from collections import defaultdict
-from typing import Iterable, Optional, Callable, List, Dict, Union, Tuple, cast
+from typing import Iterable, Optional, Callable, List, Dict, Union, Tuple, cast, Any
 import numpy as np
 import pandas as pd
 from PIL import Image
+import matplotlib.pyplot as plt
 from pathlib import Path
 import torch
 from torch.utils.data import Dataset, DataLoader
 from torchvision.datasets.folder import has_file_allowed_extension, pil_loader
 from torchvision.datasets import DatasetFolder, ImageFolder
+from torchvision.transforms import ToTensor
 import joblib
-from reprlearn.utils.misc import has_img_suffix, is_img_fp, is_valid_dir
+from reprlearn.utils.misc import has_img_suffix, is_img_fp, is_valid_dir, load_pil_img, now2str
+from reprlearn.visualize.utils import show_timg, show_timgs, show_npimgs
 from reprlearn.data.datasets.utils import create_subdf
 from sklearn.model_selection import StratifiedShuffleSplit
 
@@ -390,6 +393,7 @@ class DatasetFromDF(Dataset):
                  df: pd.DataFrame,
                  label_key: str,
                  xform: Optional[Callable]=None,
+                #  xform: Optional[Callable[[Image], Any]]=None,
                  target_xform: Optional[Callable]=None
                 ):
         self.df = df
@@ -420,9 +424,144 @@ class DatasetFromDF(Dataset):
             label = self.target_xform(label)
         
         return img, label
+  
+  
+    # helpers, visualizer
+    def get_img_fp(self, idx: int) -> Path:
+        img_fp = self.df.iloc[idx]['img_fp']
+        return img_fp
     
+    def show_original_img(self, idx:int)-> None:
+        img_fp = self.get_img_fp(idx)
+        img = load_pil_img(img_fp)
+        timg = ToTensor()(img)
+        label_str = self.df.iloc[idx][self.label_key] 
+        show_timg(timg, title=label_str)
+    
+    def show_transform(self, 
+                       idx:int, 
+                       save:Optional[bool]=False,
+                       **kwargs) -> None:
+    
+        img_fp = self.get_img_fp(idx)
+        img = load_pil_img(img_fp)
+        timg = ToTensor()(img)
+        label_str = self.df.iloc[idx][self.label_key] 
+        
+        xformed_timg, _ = self[idx]
+        
+        # show original and transformed images side-by-side
+        titles = kwargs.pop('titles', None) or ['original', 'transformed']
+        title = kwargs.pop('title', None) or label_str
+        f, ax = show_timgs([timg, xformed_timg],
+                   titles=titles,
+                   title=title,
+                   **kwargs) 
+        if save:
+            dpi = kwargs.pop('dpi', 300)
+            plt.savefig(f'{title}-{now2str()}.png', dpi=dpi)
+            
+        
+        
     def compute_mean_std(self):
         pass
+       
+       
+# todo: move this to a different datasets module later
+class ArtDatasetFromDF(DatasetFromDF):
+    def __init__(self,
+                 df: pd.DataFrame,
+                 label_key: str,  # which column to be used as target_labels(y)
+                 col_img_fp: str, # name of column that has img filepaths in gm256
+                 col_proj_fp: str, # name of column that has filpaths to projection of each img_fp to real dataset
+                 xform: Optional[Callable]=None,
+                 target_xform: Optional[Callable]=None,
+                 n_channels: Optional[int]=3,
+                 feature_space:Optional[str]='',
+                ):
+        """assumes img (data being read from the filepaths) are 3-dim of either 
+        (3, h, w) or (1, h, w)
+        - n_channels = 3 (default) or 1
         
+        """
+        super().__init__(
+            df=df,
+            label_key=label_key,
+            xform=xform,
+            target_xform=target_xform
+        )
+        self.feature_space = feature_space
+        # sets: 
+        # self.df, self.label_key, 
+        # self.label_set, self.c2i, self.i2c,
+        # self.xform, self.target_xform 
+        self.as_gray = (n_channels == 1)
+        self.col_img_fp = col_img_fp
+        self.col_proj_fp = col_proj_fp
+        
+        assert len(df[col_img_fp]) == len(df[col_proj_fp])
+        
+    def __len__(self) -> int:
+        return len(self.df[self.col_img_fp])
     
+    def __getitem__(self, idx: int) -> Tuple:
+        """returns  a tuple of (art, label) where
+        art  : xform(x_g) - xform(x_p) 
+        label: label of x_g (e.g., model_id or fam_id)
+        """
+        img_fp = self.df.iloc[idx][self.col_img_fp]
+        proj_fp = self.df.iloc[idx][self.col_proj_fp]
+        x_g = load_pil_img(img_fp, as_gray=self.as_gray)
+        x_p = load_pil_img(proj_fp, as_gray=self.as_gray)
+        if self.xform is not None:
+            x_g = self.xform(x_g)
+            x_p = self.xform(x_p)
+        art = x_g - x_p
+        
+        label_str = self.df.iloc[idx][self.label_key]
+        label = self.c2i[label_str]
+        if self.target_xform is not None:
+            label = self.target_xform(label)
+        
+        return art, label
+    
+    def show_triplet(self, 
+                     idx:int, 
+                     use_abs:Optional[bool]=False,
+                     save:Optional[bool]=False
+                    ) -> Tuple[plt.Figure, plt.Axes]:
+        """Show  a tuple of (x_g, x_p, art), with title=label, where:
+        art  : xform(x_g) - xform(x_p) 
+        label: label of x_g (e.g., model_id or fam_id)
+        """
+        img_fp = self.df.iloc[idx][self.col_img_fp]
+        proj_fp = self.df.iloc[idx][self.col_proj_fp]
+        x_g = load_pil_img(img_fp, as_gray=self.as_gray)
+        x_p = load_pil_img(proj_fp, as_gray=self.as_gray)
+        if self.xform is not None:
+            x_g = self.xform(x_g)
+            x_p = self.xform(x_p)
+        art = x_g - x_p
+        
+        label_str = self.df.iloc[idx][self.label_key]
+        label = self.c2i[label_str]
+        if self.target_xform is not None:
+            label = self.target_xform(label)
+        
+        if use_abs:
+            art = art.abs()
+        min_art = art.min()
+        max_art = art.max()
+        # show_timgs([x_g, x_p, art], 
+        #            titles=['x_g', 'x_proj', f'artifact ({min_art:.2f}, {max_art:.2f})'],
+        #            title=label_str, nrows=1)
+        show_timg(
+            timg=art, 
+            title=f'artifact ({min_art:.2f}, {max_art:.2f})',
+        )
+        if save:
+            plt.savefig(f'art-{self.feature_space}-triplet-{label_str}-{idx}-{now2str()}',
+                        dpi = 300)
+
+                 
     
